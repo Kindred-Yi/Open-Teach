@@ -53,7 +53,9 @@ For using the API we use for policy learning, use [this](https://github.com/NYU-
 
 
 ## Running Teleoperation(Kindred's Note)
+
 IP configurationn:
+
 Right Franka Arm: 192.168.4.2
 
 Left Franka Arm: 192.168.4.3
