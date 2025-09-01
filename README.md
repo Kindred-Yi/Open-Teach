@@ -53,11 +53,23 @@ For using the API we use for policy learning, use [this](https://github.com/NYU-
 
 
 ## Running Teleoperation
-Run this on the NUC:
+IP configurationn:
+Right Franka Arm: 192.168.4.2
+Left Franka Arm: 192.168.4.3
+NUC(the laptop with real-time kernel): 192.168.4.4
+PC(your own laptop): 192.168.4.6
+
+First, you need to connect to the NUC:
+```bash
+ssh hcilab@192.168.4.4
+```
 
 ```bash
-cd deoxys_control/deoxys && ./bin/franka-interface config/charmander.yml
+cd Desktop/github/deoxys_control/deoxys && ./bin/franka-interface config/charmander_left.yml # you need to open a new terminal for starting the right arm controller node
 ```
+Then in your PC:
+First install miniconda (here)[https://www.anaconda.com/docs/getting-started/miniconda/install#macos-linux-installation]
+Then in this repo, 
 
 
 
