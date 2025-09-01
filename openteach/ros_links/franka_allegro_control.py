@@ -1,10 +1,7 @@
-import rospy
 import numpy as np
 import time
 
-from sensor_msgs.msg import JointState
-from geometry_msgs.msg import PoseStamped
-from allegro_hand.controller import AllegroController
+
 from franka_arm.controller import FrankaController
 from copy import deepcopy as copy
 
@@ -30,7 +27,7 @@ ALLEGRO_HOME_VALUES = ALLEGRO_ORIGINAL_HOME_VALUES
 
 
 class DexArmControl():
-    def __init__(self, record_type=None, robot_type='both'):
+    def __init__(self, record_type=None, robot_type='franka'):
 
         # if pub_port is set to None it will mean that
         # this will only be used for listening to franka and not commanding
@@ -39,97 +36,14 @@ class DexArmControl():
         except:
             pass
     
-        if robot_type == 'both':
-            self._init_allegro_hand_control()
-            self._init_franka_arm_control(record_type)
-        elif robot_type == 'allegro':
-            self._init_allegro_hand_control()
-        elif robot_type == 'franka':
-            self._init_franka_arm_control(record_type)
 
-    # Controller initializers
-    def _init_allegro_hand_control(self):
-        self.allegro = AllegroController()
-
-        self.allegro_joint_state = None
-        rospy.Subscriber(
-            ALLEGRO_JOINT_STATE_TOPIC, 
-            JointState, 
-            self._callback_allegro_joint_state, 
-            queue_size = 1
-        )
-
-        self.allegro_commanded_joint_state = None
-        rospy.Subscriber(
-            ALLEGRO_COMMANDED_JOINT_STATE_TOPIC, 
-            JointState, 
-            self._callback_allegro_commanded_joint_state, 
-            queue_size = 1
-        )
+        self._init_franka_arm_control(record_type)
 
     def _init_franka_arm_control(self, record_type=None):
 
         self.franka = FrankaController(record_type)
 
-    # Rostopic callback functions
-    def _callback_allegro_joint_state(self, joint_state):
-        self.allegro_joint_state = joint_state
 
-    def _callback_allegro_commanded_joint_state(self, joint_state):
-        self.allegro_commanded_joint_state = joint_state
-
-    # State information functions
-    def get_hand_state(self):
-        if self.allegro_joint_state is None:
-            return None
-
-        raw_joint_state = copy(self.allegro_joint_state)
-
-        joint_state = dict(
-            position = np.array(raw_joint_state.position, dtype = np.float32),
-            velocity = np.array(raw_joint_state.velocity, dtype = np.float32),
-            effort = np.array(raw_joint_state.effort, dtype = np.float32),
-            timestamp = raw_joint_state.header.stamp.secs + (raw_joint_state.header.stamp.nsecs * 1e-9)
-        )
-        return joint_state
-
-    def get_commanded_hand_state(self):
-        if self.allegro_commanded_joint_state is None:
-            return None
-
-        raw_joint_state = copy(self.allegro_commanded_joint_state)
-
-        joint_state = dict(
-            position = np.array(raw_joint_state.position, dtype = np.float32),
-            velocity = np.array(raw_joint_state.velocity, dtype = np.float32),
-            effort = np.array(raw_joint_state.effort, dtype = np.float32),
-            timestamp = raw_joint_state.header.stamp.secs + (raw_joint_state.header.stamp.nsecs * 1e-9)
-        )
-        return joint_state
-        
-    def get_hand_position(self):
-        if self.allegro_joint_state is None:
-            return None
-
-        return np.array(self.allegro_joint_state.position, dtype = np.float32)
-
-    def get_hand_velocity(self):
-        if self.allegro_joint_state is None:
-            return None
-
-        return np.array(self.allegro_joint_state.velocity, dtype = np.float32)
-
-    def get_hand_torque(self):
-        if self.allegro_joint_state is None:
-            return None
-
-        return np.array(self.allegro_joint_state.effort, dtype = np.float32)
-
-    def get_commanded_hand_joint_position(self):
-        if self.allegro_commanded_joint_state is None:
-            return None
-
-        return np.array(self.allegro_commanded_joint_state.position, dtype = np.float32)
 
     def get_arm_osc_position(self):
         current_pos, current_axis_angle = copy(self.franka.get_osc_position())
@@ -200,17 +114,6 @@ class DexArmControl():
             axis=0
         )
 
-        return cartesian_coord
-
-    # Movement functions
-    def move_hand(self, allegro_angles):
-        self.allegro.hand_pose(allegro_angles)
-
-    def home_hand(self):
-        self.allegro.hand_pose(ALLEGRO_HOME_VALUES)
-
-    def reset_hand(self):
-        self.home_hand()
 
     def move_arm_joint(self, joint_angles):
         self.franka.joint_movement(joint_angles)
@@ -246,11 +149,4 @@ class DexArmControl():
     def reset_arm(self):
         self.home_arm()
 
-    # Full robot commands
-    def move_robot(self, allegro_angles, arm_angles):
-        self.franka.joint_movement(arm_angles, False)
-        self.allegro.hand_pose(allegro_angles)
 
-    def home_robot(self):
-        self.home_hand()
-        self.home_arm() # For now we're using cartesian values

@@ -1,0 +1,17 @@
+# Tesollo 3F gripper configuration
+total_num_joints: 12
+joints_per_finger: 4
+
+# Fingers and their offsets in the joint array
+fingers:
+  index:
+    name: 'Index'  # F1 - index finger equivalent
+    offset: 0
+  
+  middle:
+    name: 'Middle'  # F2 - middle finger equivalent
+    offset: 4
+
+  thumb:
+    name: 'Thumb'   # F3 - thumb equivalent
+    offset: 8

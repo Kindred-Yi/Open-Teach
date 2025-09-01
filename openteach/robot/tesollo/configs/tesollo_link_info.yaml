@@ -1,0 +1,55 @@
+# Tesollo 3F gripper link and joint information
+links_info:
+
+  # Base link 
+  base:
+    name: 'Base'
+    link: 'delto_base_link'
+
+  # Finger 1 (Index equivalent) - F1
+  index:
+    name: 'Index'
+    link: 'F1_01'
+    offset: 0
+    joint_min: 
+      - -1.0472    # F1M1: -60° (rotatory joint)
+      - -1.76278   # F1M2: -101° (proximal)
+      - -0.15708   # F1M3: -9° (middle) 
+      - -0.226893  # F1M4: -13° (distal)
+    joint_max: 
+      - 1.0472     # F1M1: +60° (rotatory joint)
+      - 1.76278    # F1M2: +101° (proximal)
+      - 2.53073    # F1M3: +145° (middle)
+      - 2.02458    # F1M4: +116° (distal)
+
+  # Finger 2 (Middle equivalent) - F2
+  middle:
+    name: 'Middle'
+    link: 'F2_01'
+    offset: 4
+    joint_min: 
+      - -1.91986   # F2M1: -110° (rotatory joint)
+      - -1.76278   # F2M2: -101° (proximal)
+      - -0.15708   # F2M3: -9° (middle)
+      - -0.226893  # F2M4: -13° (distal)
+    joint_max: 
+      - 0.139626   # F2M1: +8° (rotatory joint)
+      - 1.76278    # F2M2: +101° (proximal)
+      - 2.53073    # F2M3: +145° (middle)
+      - 2.02458    # F2M4: +116° (distal)
+  
+  # Finger 3 (Thumb equivalent) - F3
+  thumb:
+    name: 'Thumb'
+    link: 'F3_01'
+    offset: 8
+    joint_min: 
+      - -0.0872665 # F3M1: -5° (rotatory joint)
+      - -1.76278   # F3M2: -101° (proximal)
+      - -0.15708   # F3M3: -9° (middle)
+      - -0.226893  # F3M4: -13° (distal)
+    joint_max: 
+      - 2.00713    # F3M1: +115° (rotatory joint)
+      - 1.76278    # F3M2: +101° (proximal)
+      - 2.53073    # F3M3: +145° (middle)
+      - 2.02458    # F3M4: +116° (distal)

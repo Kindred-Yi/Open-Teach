@@ -1,0 +1,28 @@
+# Joint movement bounds per input coordinate for Tesollo 3F gripper
+# These values control the maximum change per step for safe operation
+jointwise_angle_bounds: 
+  # Finger 1 (F1) joint limits
+  - 0.05  # F1M1 rotatory joint - conservative for base rotation
+  - 0.2   # F1M2 proximal joint 
+  - 0.2   # F1M3 middle joint
+  - 0.2   # F1M4 distal joint
+  # Finger 2 (F2) joint limits  
+  - 0.05  # F2M1 rotatory joint - conservative for base rotation
+  - 0.2   # F2M2 proximal joint
+  - 0.2   # F2M3 middle joint
+  - 0.2   # F2M4 distal joint
+  # Finger 3 (F3) joint limits - thumb equivalent
+  - 0.05  # F3M1 rotatory joint - conservative for base rotation
+  - 0.2   # F3M2 proximal joint
+  - 0.2   # F3M3 middle joint
+  - 0.2   # F3M4 distal joint
+
+# Moving average time steps for smoothing
+time_steps: 1
+
+# Scaling factors for human-to-robot mapping
+linear_scaling_factors: [1.0, 1.0, 1.0]  # Conservative 1:1 mapping initially
+rotatory_scaling_factors: 
+  index: 0.02    # F1 - index finger equivalent
+  middle: 0.02   # F2 - middle finger equivalent  
+  thumb: 0.05    # F3 - thumb equivalent (higher for more sensitivity)

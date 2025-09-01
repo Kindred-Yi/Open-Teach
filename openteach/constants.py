@@ -59,6 +59,14 @@ ALLEGRO_JOINT_OFFSETS = {
     'thumb': 12
 }
 
+# Tesollo
+TESOLLO_JOINTS_PER_FINGER = 4
+TESOLLO_JOINT_OFFSETS = {
+    'index': 0,
+    'middle': 4,
+    'thumb': 8
+}
+
 # Kinova
 KINOVA_VELOCITY_SCALING_FACTOR = 20
 KINOVA_SIM_VELOCITY_SCALING_FACTOR = 1
