@@ -55,8 +55,11 @@ For using the API we use for policy learning, use [this](https://github.com/NYU-
 ## Running Teleoperation(Kindred's Note)
 IP configurationn:
 Right Franka Arm: 192.168.4.2
+
 Left Franka Arm: 192.168.4.3
+
 NUC(the laptop with real-time kernel): 192.168.4.4
+
 PC(your own laptop): 192.168.4.6
 
 First, you need to connect to the NUC:
