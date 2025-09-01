@@ -52,4 +52,12 @@ For open-source code of the policies we trained on the robots refer [here](/docs
 For using the API we use for policy learning, use [this](https://github.com/NYU-robot-learning/Open-Teach-API)
 
 
+## Running Teleoperation
+Run this on the NUC:
+
+```bash
+cd deoxys_control/deoxys && ./bin/franka-interface config/charmander.yml
+```
+
+
 
