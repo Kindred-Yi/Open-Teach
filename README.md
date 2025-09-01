@@ -52,7 +52,7 @@ For open-source code of the policies we trained on the robots refer [here](/docs
 For using the API we use for policy learning, use [this](https://github.com/NYU-robot-learning/Open-Teach-API)
 
 
-## Running Teleoperation
+## Running Teleoperation(Kindred's Note)
 IP configurationn:
 Right Franka Arm: 192.168.4.2
 Left Franka Arm: 192.168.4.3
@@ -65,11 +65,26 @@ ssh hcilab@192.168.4.4
 ```
 
 ```bash
-cd Desktop/github/deoxys_control/deoxys && ./bin/franka-interface config/charmander_left.yml # you need to open a new terminal for starting the right arm controller node
+cd Desktop/github/deoxys_control/deoxys
+./bin/franka-interface config/charmander_left.yml # you need to open a new terminal for starting the right arm controller node
 ```
 Then in your PC:
-First install miniconda (here)[https://www.anaconda.com/docs/getting-started/miniconda/install#macos-linux-installation]
-Then in this repo, 
+First install miniconda [here](https://www.anaconda.com/docs/getting-started/miniconda/install#macos-linux-installation)
 
+In this repo, activate the conda environment:
+```bash
+conda env create -f environment.yml
+conda activate openteach
+```
+This will install all the dependencies required for the server code.  
+After installing all the prerequisites, you can install this pipeline as a package with pip:
+`pip install -e . `
 
+Next, install deoxys for franka control in your PC by following the (documentation)[https://zhuyifengzju.github.io/deoxys_docs/html/installation/codebase_installation.html], it's already installed in NUC
 
+Then we can start teloperating by running:
+```bash
+cd Open-Teach/
+python teleop.py robot=dual_franka
+```
+When you can see everything is working in terminal, you can start the VR program in your headset
