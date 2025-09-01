@@ -32,7 +32,7 @@ You can test if it had installed correctly by running ` import openteach` from t
 
 1. For Simulation specific information, follow the instructions [here](/docs/simulation.md).
 
-2. For Robot controller installation, follow the instructions [here](https://github.com/NYU-robot-learning/OpenTeach-Controllers](https://github.com/Kindred-Yi/OpenTeach-Controllers)
+2. For Robot controller installation, follow the instructions [here](https://github.com/Kindred-Yi/OpenTeach-Controllers)
 
 ### For starting the camera sensors
 
