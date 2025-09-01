@@ -30,7 +30,6 @@ Since both the hands are being used here for teleoperation and gripper mode sele
 | ----------------------- | ------------------------------------------------------------ | ------------------- |
 | Index Pinch             | Start the Teleop ( Only used at the start of the teleoperation ) | Green               |
 | Middle Pinch            | Pause/Resume the Robot                                       | Red                 |
-| Ring Pinch              | Pause/Resume the Robot                                       | Red                 |
 | Pinky Pinch             | Gripper Open/Close                                           | Yellow              |
 
 
