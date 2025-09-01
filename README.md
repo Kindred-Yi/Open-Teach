@@ -84,8 +84,10 @@ conda activate openteach
 This will install all the dependencies required for the server code.  
 After installing all the prerequisites, you can install this pipeline as a package with pip:
 `pip install -e . `
-You can test if it had installed correctly by running ' import openteach ' from the python shell.
-Next, install deoxys for franka control in your PC by following the (documentation)[https://zhuyifengzju.github.io/deoxys_docs/html/installation/codebase_installation.html], it's already installed in NUC
+
+You can test if it had installed correctly by running ` import openteach` from the python shell.
+
+Next, install deoxys for franka control in your PC by following the [documentation](https://zhuyifengzju.github.io/deoxys_docs/html/installation/codebase_installation.html), it's already installed in NUC
 
 Then we can start teloperating by running:
 ```bash
