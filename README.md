@@ -104,25 +104,24 @@ To teleoperate, there are several components: Detector, Transforms, Visualizers,
 
 ### 1. Detector
 
-The teleoperation begins when you launch:
+The system starts by launching:
+
 ```bash
-python teleop.py robot=dual_franka
+python teleop.py robot=bimanual_franka
 ```
-This command starts the Detector subprocess.
 
-The detector used here is **`OculusVRTwoHandDetector`**, which captures hand motion data from an Oculus VR headset.
+- **`OculusVRTwoHandDetector`**  
+  Captures hand motion data from the VR system.
 
-It receives input through several ports:
+- **Input ports**  
+  - `oculus_right_port` / `oculus_left_port`: 3D keypoints for right and left hands  
+  - `button_port`: Resolution / mode buttons  
 
-oculus_right_port / oculus_left_port → Streams of 3D keypoints from the right and left VR controllers.
+- **Output ports**  
+  - `keypoint_port`: Keypoint data stream  
+  - `button_publish_port`: Button states for downstream modules  
 
-button_port → Input for resolution buttons.
-
-The Detector publishes its outputs to:
-
-keypoint_port → 3D hand keypoints of both hands.
-
-button_publish_port → Button state messages.
+---
 
 ### 2. Transform
 
@@ -137,6 +136,8 @@ The raw VR keypoints are passed to **transformation** that adapt the data for ro
   - Subscribes: `keypoint_port`  
   - Publishes: `transformed_position_left_keypoint_port`  
   - Notes: configurable smoothing via `moving_average_limit`
+
+ ---
  
 ### 3. Visualizer
 
