@@ -95,3 +95,71 @@ cd Open-Teach/
 python teleop.py robot=dual_franka
 ```
 When you can see everything is working in terminal, you can start the VR program in your headset
+
+## How it works
+
+Communication between all components is handled through a ZeroMQ (ZMQ) message-passing mechanism, allowing independent processes or even different devices to exchange data through dedicated ports.
+
+To teleoperate, there are several components: Detector, Transforms, Visualizers, and Operators. Each component receives data from the previous one and publishes processed outputs to the next.control.
+
+### 1. Detector
+
+The teleoperation begins when you launch:
+```bash
+python teleop.py robot=dual_franka
+```
+This command starts the Detector subprocess.
+
+The detector used here is **`OculusVRTwoHandDetector`**, which captures hand motion data from an Oculus VR headset.
+
+It receives input through several ports:
+
+oculus_right_port / oculus_left_port → Streams of 3D keypoints from the right and left VR controllers.
+
+button_port → Input for resolution buttons.
+
+The Detector publishes its outputs to:
+
+keypoint_port → 3D hand keypoints of both hands.
+
+button_publish_port → Button state messages.
+
+### 2. Transform
+
+The raw VR keypoints are passed to **transformation** that adapt the data for robot use.
+
+- **`TransformHandPositionCoords`** — right hand  
+  - Subscribes: `keypoint_port`  
+  - Publishes: `transformed_position_keypoint_port`  
+  - Notes: configurable smoothing via `moving_average_limit`
+
+- **`TransformLeftHandPositionCoords`** — left hand  
+  - Subscribes: `keypoint_port`  
+  - Publishes: `transformed_position_left_keypoint_port`  
+  - Notes: configurable smoothing via `moving_average_limit`
+ 
+### 3. Visualizer
+
+For monitoring and debugging, a **2D visualizer** can be launched:
+
+- **`Hand2DVisualizer`**  
+  - Subscribes: `transformed_position_keypoint_port` (right-hand keypoints)  
+  - Displays: live feedback in a 2D plot  
+
+---
+
+### 4. Operators
+
+Operators retarget the processed VR keypoints to control the robot arms:
+
+- **`FrankaRightArmOperator`**  
+  - Receives: `transformed_position_keypoint_port` (right-hand keypoints)  
+  - Uses: `button_publish_port` for resolution commands  
+  - Sends: motion commands to the right Franka arm  
+
+- **`FrankaLeftArmOperator`**  
+  - Receives: `transformed_position_left_keypoint_port` (left-hand keypoints)  
+  - Uses: `button_publish_port` for resolution commands  
+  - Sends: motion commands to the left Franka arm  
+
+Both operators support optional filtering for smoother motion (`use_filter: True`).
