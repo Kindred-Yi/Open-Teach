@@ -8,6 +8,8 @@ try:
     import rclpy
     from rclpy.node import Node
     from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor
+    from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+
 except ImportError as e:
     raise ImportError(
         "Failed to import rclpy. For Ubuntu 22.04 + ROS 2 Humble inside Conda, "
@@ -36,12 +38,19 @@ class DexArmControl(Node):
             rclpy.init(args=None)
         super().__init__('dex_arm')
 
+        # Use real-time QoS settings
+        qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+
         self.tesollo_joint_state = None
         self.create_subscription(
             JointState,
             TESOLLO_JOINT_STATE_TOPIC,
             self._callback_tesollo_joint_state,
-            1000
+            qos_profile=qos
         )
 
         self.target_pub = self.create_publisher(
@@ -55,7 +64,7 @@ class DexArmControl(Node):
         self._last_commanded_time = 0.0
 
         # Spin the node in a background executor thread
-        self._executor = SingleThreadedExecutor()
+        self._executor = MultiThreadedExecutor(num_threads=4)
         self._executor.add_node(self)
         self._spin_thread = threading.Thread(target=self._executor.spin, daemon=True)
         self._spin_thread.start()
