@@ -32,7 +32,7 @@ You can test if it had installed correctly by running ` import openteach` from t
 
 1. For Simulation specific information, follow the instructions [here](/docs/simulation.md).
 
-2. For Robot controller installation, follow the instructions [here](https://github.com/NYU-robot-learning/OpenTeach-Controllers)
+2. For Robot controller installation, follow the instructions [here](https://github.com/Kindred-Yi/OpenTeach-Controllers)
 
 ### For starting the camera sensors
 
@@ -52,4 +52,115 @@ For open-source code of the policies we trained on the robots refer [here](/docs
 For using the API we use for policy learning, use [this](https://github.com/NYU-robot-learning/Open-Teach-API)
 
 
+## Running Teleoperation(Kindred's Note)
 
+IP configurationn:
+
+Right Franka Arm: 192.168.4.2
+
+Left Franka Arm: 192.168.4.3
+
+NUC(the laptop with real-time kernel): 192.168.4.4
+
+PC(your own laptop): 192.168.4.6
+
+First, you need to connect to the NUC:
+```bash
+ssh hcilab@192.168.4.4
+```
+
+```bash
+cd Desktop/github/deoxys_control/deoxys
+./bin/franka-interface config/charmander_left.yml # you need to open a new terminal for starting the right arm controller node
+```
+Then in your PC:
+First install miniconda [here](https://www.anaconda.com/docs/getting-started/miniconda/install#macos-linux-installation)
+
+In this repo, activate the conda environment:
+```bash
+conda env create -f environment.yml
+conda activate openteach
+```
+This will install all the dependencies required for the server code.  
+After installing all the prerequisites, you can install this pipeline as a package with pip:
+`pip install -e . `
+
+You can test if it had installed correctly by running `python -c "import openteach"` from the python shell.
+
+Next, install deoxys for franka control in your PC by following the [documentation](https://zhuyifengzju.github.io/deoxys_docs/html/installation/codebase_installation.html), it's already installed in NUC
+
+Then we can start teloperating by running:
+```bash
+cd Open-Teach/
+python teleop.py robot=dual_franka
+```
+When you can see everything is working in terminal, you can start the VR program in your headset
+
+## How it works
+
+Communication between all components is handled through a ZeroMQ (ZMQ) message-passing mechanism, allowing independent processes or even different devices to exchange data through dedicated ports.
+
+To teleoperate, there are several components: Detector, Transforms, Visualizers, and Operators. Each component receives data from the previous one and publishes processed outputs to the next.control.
+
+### 1. Detector
+
+The system starts by launching:
+
+```bash
+python teleop.py robot=bimanual_franka
+```
+
+- **`OculusVRTwoHandDetector`**  
+  Captures hand motion data from the VR system.
+
+- **Input ports**  
+  - `oculus_right_port` / `oculus_left_port`: 3D keypoints for right and left hands  
+  - `button_port`: Resolution / mode buttons  
+
+- **Output ports**  
+  - `keypoint_port`: Keypoint data stream  
+  - `button_publish_port`: Button states for downstream modules  
+
+---
+
+### 2. Transform
+
+The raw VR keypoints are passed to **transformation** that adapt the data for robot use.
+
+- **`TransformHandPositionCoords`** — right hand  
+  - Subscribes: `keypoint_port`  
+  - Publishes: `transformed_position_keypoint_port`  
+  - Notes: configurable smoothing via `moving_average_limit`
+
+- **`TransformLeftHandPositionCoords`** — left hand  
+  - Subscribes: `keypoint_port`  
+  - Publishes: `transformed_position_left_keypoint_port`  
+  - Notes: configurable smoothing via `moving_average_limit`
+
+ ---
+ 
+### 3. Visualizer
+
+For monitoring and debugging, a **2D visualizer** can be launched:
+
+- **`Hand2DVisualizer`**  
+  - Subscribes: `transformed_position_keypoint_port` (right-hand keypoints)  
+  - Displays: live feedback in a 2D plot  
+
+---
+
+### 4. Operators
+
+Operators retarget the processed VR keypoints to control the robot arms:
+
+- **`FrankaRightArmOperator`**  
+  - Receives: `transformed_position_keypoint_port` (right-hand keypoints)  
+  - Uses: `button_publish_port` for resolution commands  
+  - Sends: motion commands to the right Franka arm  
+
+- **`FrankaLeftArmOperator`**  
+  - Receives: `transformed_position_left_keypoint_port` (left-hand keypoints)  
+  - Uses: `button_publish_port` for resolution commands  
+  - Sends: motion commands to the left Franka arm  
+
+Both operators support optional filtering for smoother motion (`use_filter: True`).
