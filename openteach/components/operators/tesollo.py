@@ -1,13 +1,11 @@
 from copy import deepcopy as copy
+import numpy as np
 from openteach.utils.network import ZMQKeypointSubscriber, ZMQKeypointPublisher
 from .operator import Operator
 
-from shapely.geometry import Point, Polygon 
-from shapely.ops import nearest_points
-from .calibrators.allegro import OculusThumbBoundCalibrator
 from openteach.robot.tesollo.tesollo_retargeters import TesolloJointControl
+from openteach.robot.tesollo.tesollo import TesolloHand
 from openteach.utils.files import *
-from openteach.utils.vectorops import coord_in_bound
 from openteach.utils.timer import FrequencyTimer
 from openteach.constants import *
 
@@ -33,8 +31,7 @@ class TesolloHandOperator(Operator):
         #Initializing the solvers for tesollo hand
         self.finger_joint_solver = TesolloJointControl()
 
-        # Initializing the robot controller - use Tesollo instead of Allegro
-        from openteach.robot.tesollo.tesollo import TesolloHand
+        
         self._robot = TesolloHand()
 
         # Initialzing the moving average queues
@@ -44,10 +41,15 @@ class TesolloHandOperator(Operator):
             'middle': [],
         }
 
-        # Calibrating to get the thumb bounds
-        self._calibrate_bounds()
+
 
         self._timer = FrequencyTimer(VR_FREQ)
+
+        # Using 3 dimensional thumb motion or two dimensional thumb motion
+        if self.finger_configs.get('three_dim', False):
+            self.thumb_angle_calculator = self._get_3d_thumb_angles
+        else:
+            self.thumb_angle_calculator = self._get_2d_thumb_angles
 
     @property
     def timer(self):
@@ -80,13 +82,33 @@ class TesolloHandOperator(Operator):
         
     # Generate frozen angles for the fingers
     def _generate_frozen_angles(self, joint_angles, finger_type):
-        for idx in range(ALLEGRO_JOINTS_PER_FINGER):
+        for idx in range(TESOLLO_JOINTS_PER_FINGER):
             if idx > 0:
-                joint_angles[idx + ALLEGRO_JOINT_OFFSETS[finger_type]] = 0.05
+                joint_angles[idx + TESOLLO_JOINT_OFFSETS[finger_type]] = 0.05
             else:
-                joint_angles[idx + ALLEGRO_JOINT_OFFSETS[finger_type]] = 0
+                joint_angles[idx + TESOLLO_JOINT_OFFSETS[finger_type]] = 0
 
         return joint_angles
+
+    # Get robot thumb angles when moving only in 2D motion
+    def _get_2d_thumb_angles(self, thumb_keypoints, curr_angles):
+        # For tesollo, use joint position control like other fingers
+        return self.finger_joint_solver.calculate_finger_angles(
+            finger_type='thumb',
+            finger_joint_coords=thumb_keypoints,
+            curr_angles=curr_angles,
+            moving_avg_arr=self.moving_average_queues['thumb']
+        )
+
+    # Get robot thumb angles when moving in 3D motion
+    def _get_3d_thumb_angles(self, thumb_keypoints, curr_angles):
+        # For tesollo, use joint position control like other fingers
+        return self.finger_joint_solver.calculate_finger_angles(
+            finger_type='thumb',
+            finger_joint_coords=thumb_keypoints,
+            curr_angles=curr_angles,
+            moving_avg_arr=self.moving_average_queues['thumb']
+        )
     
     # Apply the retargeted angles to the robot
     def _apply_retargeted_angles(self):
@@ -123,7 +145,7 @@ class TesolloHandOperator(Operator):
 
         # Movement for the thumb finger with option to freeze the finger
         if not self.finger_configs['freeze_thumb'] and not self.finger_configs['no_thumb']:
-            desired_joint_angles = self.thumb_angle_calculator(hand_keypoints['thumb'][-1], desired_joint_angles) # Passing just the tip coordinates
+            desired_joint_angles = self.thumb_angle_calculator(hand_keypoints['thumb'], desired_joint_angles) # Passing all thumb coordinates
         elif self.finger_configs['freeze_thumb']:
             self._generate_frozen_angles(desired_joint_angles, 'thumb')
         else:

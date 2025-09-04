@@ -10,9 +10,6 @@ class TesolloHand(RobotWrapper):
         # Initialize Tesollo controller with Modbus TCP
         self._controller = DexArmControl(
             robot_type='tesollo',
-            ip=ip,
-            port=port, 
-            dummy=dummy
         )
 
         # For robot configurations
@@ -85,3 +82,8 @@ class TesolloHand(RobotWrapper):
 
     def move(self, angles):
         self._controller.move_hand(angles)
+
+    def move_coords(self, input_coords):
+        # For hand robots like Tesollo, coordinate-based movement might not be directly applicable
+        # This method is required by the abstract base class but may not be used for hand control
+        raise NotImplementedError("Coordinate-based movement not implemented for Tesollo hand")

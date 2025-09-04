@@ -14,7 +14,7 @@ Open Teach consists of two parts.
 
 Read VR specific information, User Interface and APK files [here](/docs/vr.md)
 
-### Server Code Installation 
+### Server Code Installation
 
 Install the conda environment from the yaml file in the codebase
 
