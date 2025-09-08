@@ -91,9 +91,9 @@ After installing all the prerequisites, you can install this pipeline as a packa
 
 You can test if it had installed correctly by running `python -c "import openteach"` from the python shell.
 
-Next, install deoxys for franka control in your PC by following the [documentation](https://zhuyifengzju.github.io/deoxys_docs/html/installation/codebase_installation.html), it's already installed in NUC
+Next, install deoxys for franka control in your PC by following the [documentation](https://zhuyifengzju.github.io/deoxys_docs/html/installation/codebase_installation.html), it's already installed in NUC.
 
-Next, clone the tesollo gripper controller repo [here](https://github.com/Tesollo-Delto/DELTO_B_ROS2). After building all the packages, run:
+After that, clone the tesollo gripper controller repo [here](https://github.com/Tesollo-Delto/DELTO_B_ROS2). After building all the packages, run:
 ```bash
 ros2 run delto_3f_driver delto_3f_external_driver_node --ros-args -p ip:=192.168.4.7 -p port:=502 # replace by 192.168.4.8 for left gripper
 ```
