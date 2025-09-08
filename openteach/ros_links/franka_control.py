@@ -128,8 +128,6 @@ class DexArmControl():
     # Full robot commands
     def move_robot(self, allegro_angles, arm_angles):
         self.franka.joint_movement(arm_angles, False)
-        self.allegro.hand_pose(allegro_angles)
 
     def home_robot(self):
-        self.home_hand()
         self.home_arm() # For now we're using cartesian values

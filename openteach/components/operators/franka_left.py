@@ -78,7 +78,8 @@ class FrankaLeftArmOperator(Operator):
         self.is_first_frame= True
         self.prev_pause_flag=0
         self.pause_cnt=0
-        self.pause_flag=1
+        # Start in STOP state so first pinch starts control
+        self.pause_flag=0
 
 
     @property
@@ -241,8 +242,9 @@ class FrankaLeftArmOperator(Operator):
         # Use a Filter
         if self.use_filter:
             final_pose = self.comp_filter(final_pose)
-        # Move the robot arm
-        self.robot.arm_control(final_pose)
+        # Move the robot arm only when teleoperation is active
+        if self.arm_teleop_state == ARM_TELEOP_CONT:
+            self.robot.arm_control(final_pose)
 
     def stream(self):
         self.notify_component_start('{} control'.format(self.robot.name))

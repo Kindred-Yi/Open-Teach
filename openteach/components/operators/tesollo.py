@@ -43,7 +43,7 @@ class TesolloHandOperator(Operator):
 
 
 
-        self._timer = FrequencyTimer(VR_FREQ)
+        self._timer = FrequencyTimer(60)
 
         # Using 3 dimensional thumb motion or two dimensional thumb motion
         if self.finger_configs.get('three_dim', False):

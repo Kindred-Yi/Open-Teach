@@ -1,6 +1,6 @@
-robot_name: franka_arm
+robot_name: allegro_franka_dex_arm
 
-# Detector used to teleoperate the robot
+# Detection from the oculus
 detector:
   _target_: openteach.components.detector.oculus.OculusVRHandDetector
   host: ${host_address}
@@ -11,7 +11,7 @@ detector:
   teleop_reset_port: ${teleop_reset_port}
   teleop_reset_publish_port: ${teleop_reset_publish_port}
 
-# Transformation classes used to transform the keypoints
+# Transforming the keypoints from the oculus
 transforms:
   - 
     _target_: openteach.components.detector.keypoint_transform.TransformHandPositionCoords
@@ -22,7 +22,7 @@ transforms:
 
 # Visualizers used to visualize the keypoints stream
 visualizers:
-  -
+  - 
     _target_: openteach.components.visualizers.visualizer_2d.Hand2DVisualizer
     host: ${host_address}
     transformed_keypoint_port: ${transformed_position_keypoint_port}
@@ -31,23 +31,47 @@ visualizers:
 
 # Operators used to retarget the keypoints
 operators:
+  # tesollo
+  -
+    _target_: openteach.components.operators.tesollo.TesolloHandOperator
+    host: ${host_address}
+    transformed_keypoints_port: ${transformed_position_keypoint_port}
+    finger_configs:
+      freeze_index: false
+      freeze_middle: false
+      freeze_thumb: false
+      no_index: false
+      no_middle: false 
+      no_thumb: false
+      three_dim: true
+  
+  # Franka Arm
   - 
     _target_: openteach.components.operators.franka_right.FrankaRightArmOperator
     host: ${host_address}
     transformed_keypoints_port: ${transformed_position_keypoint_port}
-    arm_resolution_port: ${resolution_button_publish_port} 
-    use_filter: False
+    arm_resolution_port: ${resolution_button_publish_port}
+    use_filter: True
     teleoperation_reset_port: ${teleop_reset_publish_port}
 
 # List of controller classes used
 controllers:
+  # Tesollo
+  -
+    _target_: openteach.robot.tesollo.tesollo.TesolloHand
+  
+  # Franka Arm
   -
     _target_: openteach.robot.franka_right.FrankaRight
-    record: False
+    record_type: null
 
-
-# Information to be recorded by the robot 
 recorded_data:
+  # Tesollo
+  -
+    - joint_states
+    - commanded_joint_states
+
+  # Franka
   - 
     - joint_states
     - cartesian_states
