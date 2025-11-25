@@ -4,7 +4,7 @@ from .robot import RobotWrapper
 class FrankaLeft(RobotWrapper):
     def __init__(self, record_type=None):
         self._controller = DexArmControl(record_type=record_type, hand_type='left')
-        self._data_frequency = 50
+        self._data_frequency = 90
 
     @property
     def recorder_functions(self):

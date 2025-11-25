@@ -21,8 +21,8 @@ jointwise_angle_bounds:
 time_steps: 1
 
 # Scaling factors for human-to-robot mapping
-linear_scaling_factors: [1.0, 1.0, 1.0]  # Conservative 1:1 mapping initially
+linear_scaling_factors: [1.5, 1.5, 2.5]  # Conservative 1:1 mapping initially
 rotatory_scaling_factors: 
-  index: 0.02    # F1 - index finger equivalent
-  middle: 0.02   # F2 - middle finger equivalent  
-  thumb: 0.05    # F3 - thumb equivalent (higher for more sensitivity)
+  index: 0.2    # F1 - index finger equivalent
+  middle: 0.2   # F2 - middle finger equivalent  
+  thumb: 0.5    # F3 - thumb equivalent (higher for more sensitivity)

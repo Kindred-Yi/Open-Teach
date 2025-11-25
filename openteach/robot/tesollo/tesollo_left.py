@@ -1,15 +1,15 @@
 import numpy as np
 from copy import deepcopy as copy
-from openteach.ros_links.tesollo_control import DexArmControl 
+from openteach.ros_links.tesollo_control2 import DexArmControl 
 from openteach.constants import *
 from openteach.utils.files import get_yaml_data, get_path_in_package
 from openteach.robot.robot import RobotWrapper
 
-class TesolloHand(RobotWrapper):
+class TesolloLeftHand(RobotWrapper):
     def __init__(self, ip=None, port=None, dummy=False, **kwargs):
         # Initialize Tesollo controller with Modbus TCP
         self._controller = DexArmControl(
-
+            hand_type='left',
         )
 
         # For robot configurations
@@ -19,7 +19,7 @@ class TesolloHand(RobotWrapper):
 
     @property
     def name(self):
-        return 'tesollo'
+        return 'left tesollo'
 
     @property
     def recorder_functions(self):

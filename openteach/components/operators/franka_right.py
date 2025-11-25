@@ -10,6 +10,8 @@ from openteach.utils.files import *
 from openteach.robot.franka_right import FrankaRight
 from scipy.spatial.transform import Rotation, Slerp
 from .operator import Operator
+from scipy.spatial.transform import Rotation as R
+
 
 class Filter:
     def __init__(self, state, comp_ratio=0.6):
@@ -225,12 +227,18 @@ class FrankaRightArmOperator(Operator):
         H_HT_HH = copy(self.hand_moving_H) # Homo matrix that takes P_HT to P_HH
         H_RI_RH = copy(self.robot_init_H) # Homo matrix that takes P_RI to P_RH
 
-        # Rotation from allegro to franka
+        # Add 180 degree rotation to reverse horizontal/forward directions
+        phi_deg = 90  # Changed from -90 to 90 to reverse horizontal directions
+        Rz = R.from_euler('z', phi_deg, degrees=True).as_matrix()
+        # Rotation from tesollo to franka
         H_A_R = np.array( 
-            [[1/np.sqrt(2), 1/np.sqrt(2), 0, 0],
-             [-1/np.sqrt(2), 1/np.sqrt(2), 0, 0],
-             [0, 0, 1, -0.06], # The height of the allegro mount is 6cm
+            [[1, 0, 0, 0],
+             [0, 1, 0, 0],
+             [0, 0, 1, -0.0], # Make the height 6cm but doesn't test
              [0, 0, 0, 1]])  
+        
+        Rx = R.from_euler('x', 90, degrees=True).as_matrix() 
+        H_A_R[:3,:3] = Rz @ Rx
 
         H_HT_HI = np.linalg.pinv(H_HI_HH) @ H_HT_HH # Homo matrix that takes P_HT to P_HI
         H_RT_RH = H_RI_RH @ H_A_R @ H_HT_HI @ np.linalg.pinv(H_A_R) # Homo matrix that takes P_RT to P_RH
@@ -242,8 +250,9 @@ class FrankaRightArmOperator(Operator):
         if self.use_filter:
             final_pose = self.comp_filter(final_pose)
         # Move the robot arm
-        if self.arm_teleop_state == ARM_TELEOP_CONT:
-            self.robot.arm_control(final_pose)
+        # Make it nonstop for testing
+        # if self.arm_teleop_state == ARM_TELEOP_CONT:
+        self.robot.arm_control(final_pose)
 
     def stream(self):
         self.notify_component_start('{} control'.format(self.robot.name))

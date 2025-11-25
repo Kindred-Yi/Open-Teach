@@ -24,8 +24,8 @@ from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 # -------------------- Topics & Defaults -------------------- #
-JOINT_STATES_TOPIC = '/joint_states'
-JTC_CMD_TOPIC = '/delto_3f_controller/joint_trajectory'
+#JOINT_STATES_TOPIC = '/joint_states'
+#JTC_CMD_TOPIC = '/delto_3f_controller/joint_trajectory'
 
 # Must match your controller YAML order (joint_trajectory_controller.joints)
 JOINT_NAMES = [
@@ -42,7 +42,15 @@ TESOLLO_HOME_VALUES = [
 
 
 class DexArmControl(Node):
-    def __init__(self, *, rate_hz: float = 60.0, joint_names: Optional[List[str]] = None):
+    def __init__(self, *, rate_hz: float = 60.0, joint_names: Optional[List[str]] = None, hand_type: str = 'right'):
+
+        if hand_type == 'right':
+            JOINT_STATES_TOPIC = '/right/joint_states'
+            JTC_CMD_TOPIC = '/right/dg3f_b_controller/joint_trajectory'
+        else:
+            JOINT_STATES_TOPIC = '/left/joint_states'
+            JTC_CMD_TOPIC = '/left/dg3f_b_controller/joint_trajectory'
+
         # Initialize rclpy and node
         if not rclpy.ok():
             rclpy.init(args=None)

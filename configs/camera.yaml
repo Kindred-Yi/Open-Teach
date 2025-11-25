@@ -5,15 +5,15 @@ defaults:
   - override hydra/job_logging: disabled 
 
 robot_cam_serial_numbers:
-  - '141722071999' # close to the robot
-  - '138422075648' # on top left corner
-  - '023422073116'
+  # - '141722071999' # close to the robot
+  # - '138422075648' # on top left corner
+  - '827312070419'
 
 cam_configs:
   width: 1280
   height: 720
   fps: 30
-  processing_preset: 1 # High accuracy mode
+  processing_preset: 1 # high accuracy
   rotation_angle: 0
 
 oculus_cam: 0 # First camera

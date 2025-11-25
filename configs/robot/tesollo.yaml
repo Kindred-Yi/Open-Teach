@@ -37,7 +37,7 @@ operators:
     host: ${host_address}
     transformed_keypoints_port: ${transformed_position_keypoint_port}
     finger_configs:
-      freeze_index: false
+      freeze_index: true
       freeze_middle: false
       freeze_thumb: false
       no_index: false

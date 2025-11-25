@@ -20,6 +20,7 @@ class DexArmControl():
     def _init_franka_arm_control(self, record_type=None, hand_type=None):
         self.franka = FrankaController(record_type, hand_type)
 
+
     def get_arm_osc_position(self):
         current_pos, current_axis_angle = copy(self.franka.get_osc_position())
         current_pos = np.array(current_pos, dtype=np.float32).flatten()

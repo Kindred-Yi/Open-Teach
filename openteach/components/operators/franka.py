@@ -210,7 +210,7 @@ class FrankaArmOperator(Operator):
         H_A_R = np.array( 
             [[1, 0, 0, 0],
              [0, 1, 0, 0],
-             [0, 0, 1, 0], # The height of the allegro mount is 6cm
+             [0, 0, 1, -0.06], # The height of the allegro mount is 6cm
              [0, 0, 0, 1]])  
 
         H_HT_HI = np.linalg.pinv(H_HI_HH) @ H_HT_HH # Homo matrix that takes P_HT to P_HI

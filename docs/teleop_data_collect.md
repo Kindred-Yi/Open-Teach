@@ -75,3 +75,17 @@ The Data Collection module saves the robot states , cameras sensors output as a 
 #### Note: Remember to enter your network IP on the server [config](/configs/network.yaml)
 
 The data saves camera stream in the optimized form of .avi videos and saves depth and robot information in the form of h5 files.
+
+# Synchronizing Demonstrations
+
+Each recorder runs at a different rate, which means raw files inside `extracted_data/demonstration_<N>` do not share the same timestamps. Use `sync_demonstration.py` to resample the robot states to the RGB frame timestamps and produce a dataset where every RGB frame has matching joint data:
+
+```bash
+python sync_demonstration.py --demo 11 --storage-path extracted_data
+```
+
+The command above creates `extracted_data/demonstration_11/synced_cam_0/` containing:
+- `synced_data.h5` with the RGB timestamps, optional frame file paths, and a resampled copy of every `<robot>_<state>.h5` dataset.
+- `synced_index.csv` to quickly inspect `frame_idx`, `timestamp`, and `relative_time` during labeling.
+
+If you need individual RGB images when annotating, add `--dump-frames` and the script will decode `cam_<idx>_rgb_video.avi` into `rgb_frames/frame_*.jpg` (set `--image-ext` if you prefer png).

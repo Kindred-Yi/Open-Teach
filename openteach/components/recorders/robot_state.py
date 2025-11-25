@@ -13,11 +13,14 @@ class RobotInformationRecord(Recorder):
         self,
         robot_configs,
         recorder_function_key,
-        storage_path
+        storage_path,
+        robot_instance=None
     ):
 
         # Data function and attributes
+        # Use shared robot instance if provided, otherwise create new one
         self.robot = hydra.utils.instantiate(robot_configs, record_type=recorder_function_key)
+
         self.keypoint_function = self.robot.recorder_functions[recorder_function_key]
 
         # Timer

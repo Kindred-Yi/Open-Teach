@@ -185,9 +185,6 @@ class Collector(ProcessInstantiator):
             print("Initialising robot recorders")
             self._init_robot_recorders()
         
-        
-        if self.configs.is_xela is True:
-            self._init_sensor_recorders()
 
     def _create_storage_dir(self):
         if os.path.exists(self._storage_path):
@@ -268,45 +265,6 @@ class Collector(ProcessInstantiator):
                     args = (cam_idx, )
                 ))
 
-    #Function to start the sim recorders
-    def _init_sim_recorders(self):
-        port_configs = self.configs.robot.port_configs
-        for key in self.configs.robot.recorded_data[0]:
-            self.processes.append(Process(
-                        target = self._start_sim_component,
-                        args = (port_configs[0],key)))
-
-    #Function to start the xela sensor recorders
-    def _start_xela_component(self,
-        controller_config
-    ):
-        component = XelaSensorRecorder(
-            controller_configs=controller_config,
-            storage_path=self._storage_path
-        )
-        component.stream()
-
-    #Function to start the sensor recorders
-    def _init_sensor_recorders(self):
-        """
-        For the XELA sensors or any other sensors
-        """
-        for controller_config in self.configs.robot.xela_controllers:
-            self.processes.append(Process(
-                target = self._start_xela_component,
-                args = (controller_config, )
-            ))
-
-    #Function to start the fish eye recorders
-    def _start_fish_eye_component(self, cam_idx):
-        component = FishEyeImageRecorder(
-            host = self.configs.host_address,
-            image_stream_port = self.configs.fish_eye_cam_port_offset + cam_idx,
-            storage_path = self._storage_path,
-            filename = 'cam_{}_fish_eye_video'.format(cam_idx)
-        )
-        component.stream()
-
     #Function to start the robot recorders
     def _start_robot_component(
         self, 
@@ -319,16 +277,7 @@ class Collector(ProcessInstantiator):
         )
 
         component.stream()
-
-    #Function to start the sim recorders
-    def _start_sim_component(self,port_configs, recorder_function_key):
-        component = SimInformationRecord(
-                   port_configs = port_configs,
-                   recorder_function_key= recorder_function_key,
-                   storage_path=self._storage_path
-        )
-        component.stream()
-
+        
     #Function to start the robot recorders
     def _init_robot_recorders(self):
         # Instantiating the robot classes
@@ -338,7 +287,6 @@ class Collector(ProcessInstantiator):
                     target = self._start_robot_component,
                     args = (robot_controller_configs, key, )
                 ))
-
 
     
 

@@ -32,7 +32,7 @@ visualizers:
 # Operators used to retarget the keypoints
 operators:
   - 
-    _target_: openteach.components.operators.franka_right.FrankaRightArmOperator
+    _target_: openteach.components.operators.franka_left.FrankaLeftArmOperator
     host: ${host_address}
     transformed_keypoints_port: ${transformed_position_keypoint_port}
     arm_resolution_port: ${resolution_button_publish_port} 
@@ -42,7 +42,7 @@ operators:
 # List of controller classes used
 controllers:
   -
-    _target_: openteach.robot.franka_right.FrankaRight
+    _target_: openteach.robot.franka_left.FrankaLeft
 
 
 # Information to be recorded by the robot 
