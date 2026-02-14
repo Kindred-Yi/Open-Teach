@@ -16,8 +16,25 @@ debuggers/
 # Notebooks
 notebooks/*
 
-# Data
-extracted_data/*
+# ===============================
+# extracted_data: keep code, ignore data
+# ===============================
+
+# ---- Ignore data formats everywhere under extracted_data ----
+extracted_data/**/*.h5
+extracted_data/**/*.avi
+extracted_data/**/*.mp4
+extracted_data/**/*.metadata
+extracted_data/**/*.json
+extracted_data/**/*.npy
+extracted_data/**/*.pth
+extracted_data/**/*.pkl
+extracted_data/**/*.png
+
+# ---- Keep all code & text ----
+# (No need to whitelist .py if you don't ignore the directory itself)
+
+
 
 urdf/*
 # *.png
@@ -27,4 +44,4 @@ urdf/*
 *.mp4
 
 # Logs
-logs/*
+logs/*FrankaAllegro-Policies/

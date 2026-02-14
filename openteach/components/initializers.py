@@ -53,39 +53,6 @@ class RealsenseCameras(ProcessInstantiator):
                 args = (cam_idx, )
             ))
 
-class FishEyeCameras(ProcessInstantiator):
-    """
-    Returns all the fish eye camera processes. Start the list of processes to start
-    the camera stream.
-    """
-    def __init__(self, configs):
-        super().__init__(configs)
-        # Creating all the camera processes
-        self._init_camera_processes()
-
-    def _start_component(self, cam_idx):
-        print('cam_idx: {}, stream_oculus: {}'.format(cam_idx, True if self.configs.oculus_cam == cam_idx else False))
-        component = FishEyeCamera(
-            cam_index=self.configs.fisheye_cam_numbers[cam_idx],
-            stream_configs = dict(
-                host = self.configs.host_address,
-                port = self.configs.fish_eye_cam_port_offset+ cam_idx,
-                set_port_offset = self.configs.fish_eye_cam_port_offset 
-            ),
-            
-            stream_oculus = True if self.configs.stream_oculus and self.configs.oculus_cam == cam_idx else False,
-            
-        )
-        component.stream()
-
-    def _init_camera_processes(self):
-        for cam_idx in range(len(self.configs.fisheye_cam_numbers)):
-            self.processes.append(Process(
-                target = self._start_component,
-                args = (cam_idx, )
-            ))
-
-
 class TeleOperator(ProcessInstantiator):
     """
     Returns all the teleoperation processes. Start the list of processes 
@@ -104,8 +71,12 @@ class TeleOperator(ProcessInstantiator):
         self._init_visualizers()
 
 
-        if configs.operate: 
+        if configs.operate:
             self._init_operator()
+
+        # Start coordination predictor if enabled
+        if getattr(configs, 'coordination_prediction', False):
+            self._init_coordination_predictor(configs)
         
     #Function to start the components
     def _start_component(self, configs):    
@@ -118,14 +89,6 @@ class TeleOperator(ProcessInstantiator):
             target = self._start_component,
             args = (self.configs.robot.detector, )
         ))
-
-    #Function to start the sim environment
-    def _init_sim_environment(self):
-         for env_config in self.configs.robot.environment:
-            self.processes.append(Process(
-                target = self._start_component,
-                args = (env_config, )
-            ))
 
     #Function to start the keypoint transform
     def _init_keypoint_transform(self):
@@ -143,23 +106,49 @@ class TeleOperator(ProcessInstantiator):
                 target = self._start_component,
                 args = (visualizer_config, )
             ))
-        # XELA visualizer
-        if self.configs.run_xela:
-            for visualizer_config in self.configs.xela_visualizers:
-                self.processes.append(Process(
-                    target = self._start_component,
-                    args = (visualizer_config, )
-                ))
 
     #Function to start the operator
     def _init_operator(self):
         for operator_config in self.configs.robot.operators:
-            
+
             self.processes.append(Process(
                 target = self._start_component,
                 args = (operator_config, )
 
             ))
+
+    #Function to start the coordination predictor
+    def _init_coordination_predictor(self, configs):
+        model_path = getattr(configs, 'coordination_model_path',
+                             'extracted_data/213grasp_model.pth')
+        scaler_path = getattr(configs, 'coordination_scaler_path',
+                              'extracted_data/213scaler_merged.pkl')
+        window_size = getattr(configs, 'coordination_window_size', 50)
+        smoothing_count = getattr(configs, 'coordination_smoothing_count', 2)
+        data_frequency = getattr(configs, 'coordination_data_frequency', 60)
+        feature_frequency = getattr(configs, 'coordination_feature_frequency', 30)
+
+        # ZMQ ports for wrist pose (direct from transform, bypass ROS2)
+        host = configs.host_address
+        right_keypoints_port = configs.transformed_position_keypoint_port
+        left_keypoints_port = configs.transformed_position_left_keypoint_port
+
+        def start_predictor():
+            from .operators.coordination_predictor import CoordinationPredictor
+            predictor = CoordinationPredictor(
+                model_path=model_path,
+                scaler_path=scaler_path,
+                host=host,
+                right_keypoints_port=right_keypoints_port,
+                left_keypoints_port=left_keypoints_port,
+                window_size=window_size,
+                smoothing_count=smoothing_count,
+                data_frequency=data_frequency,
+                feature_frequency=feature_frequency,
+            )
+            predictor.stream()
+
+        self.processes.append(Process(target=start_predictor))
 
     
 # Data Collector Class
@@ -184,7 +173,10 @@ class Collector(ProcessInstantiator):
         else:
             print("Initialising robot recorders")
             self._init_robot_recorders()
-        
+
+
+        if self.configs.is_xela is True:
+            self._init_sensor_recorders()
 
     def _create_storage_dir(self):
         if os.path.exists(self._storage_path):
@@ -265,6 +257,45 @@ class Collector(ProcessInstantiator):
                     args = (cam_idx, )
                 ))
 
+    #Function to start the sim recorders
+    def _init_sim_recorders(self):
+        port_configs = self.configs.robot.port_configs
+        for key in self.configs.robot.recorded_data[0]:
+            self.processes.append(Process(
+                        target = self._start_sim_component,
+                        args = (port_configs[0],key)))
+
+    #Function to start the xela sensor recorders
+    def _start_xela_component(self,
+        controller_config
+    ):
+        component = XelaSensorRecorder(
+            controller_configs=controller_config,
+            storage_path=self._storage_path
+        )
+        component.stream()
+
+    #Function to start the sensor recorders
+    def _init_sensor_recorders(self):
+        """
+        For the XELA sensors or any other sensors
+        """
+        for controller_config in self.configs.robot.xela_controllers:
+            self.processes.append(Process(
+                target = self._start_xela_component,
+                args = (controller_config, )
+            ))
+
+    #Function to start the fish eye recorders
+    def _start_fish_eye_component(self, cam_idx):
+        component = FishEyeImageRecorder(
+            host = self.configs.host_address,
+            image_stream_port = self.configs.fish_eye_cam_port_offset + cam_idx,
+            storage_path = self._storage_path,
+            filename = 'cam_{}_fish_eye_video'.format(cam_idx)
+        )
+        component.stream()
+
     #Function to start the robot recorders
     def _start_robot_component(
         self, 
@@ -277,7 +308,16 @@ class Collector(ProcessInstantiator):
         )
 
         component.stream()
-        
+
+    #Function to start the sim recorders
+    def _start_sim_component(self,port_configs, recorder_function_key):
+        component = SimInformationRecord(
+                   port_configs = port_configs,
+                   recorder_function_key= recorder_function_key,
+                   storage_path=self._storage_path
+        )
+        component.stream()
+
     #Function to start the robot recorders
     def _init_robot_recorders(self):
         # Instantiating the robot classes

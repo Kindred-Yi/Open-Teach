@@ -5,10 +5,19 @@ defaults:
   - override hydra/hydra_logging: disabled  
   - override hydra/job_logging: disabled  
 
-# To run the robot 
+# To run the robot
 operate: true
 sim_env: false
 run_xela:  false
+
+# Coordination prediction (LSTM-based bimanual coordination mode classifier)
+coordination_prediction: false
+coordination_model_path: extracted_data/28_140grasp_model.pth
+coordination_scaler_path: extracted_data/27scaler_merged.pkl
+coordination_window_size: 50
+coordination_smoothing_count: 2
+coordination_data_frequency: 60
+coordination_feature_frequency: 30
 
 # Visualize 3D and 2D plots
 visualize_xela: false

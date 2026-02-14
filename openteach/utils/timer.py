@@ -15,8 +15,9 @@ class FrequencyTimer(object):
     def end_loop(self):
         wait_time = self.time_available + self.start_time
         
-        while time.time_ns() < wait_time:
-            continue
+        remaining_ns = wait_time - time.time_ns()
+        if remaining_ns > 0:
+            time.sleep(remaining_ns / 1e9)
 
 class SocketChecker(object):
     def __init__(self, host, port, topic_name, print_data, data_type = None):

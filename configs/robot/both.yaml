@@ -97,20 +97,14 @@ controllers:
 
 # Information to be recorded for the robot 
 recorded_data:
-
   - 
-    - joint_states
-    - cartesian_states
-    - 
+    - states
 
   -
-    - joint_states
-    - commanded_joint_states
+    - controller_state
 
   - 
-    - joint_states
-    - cartesian_states
+    - states
 
   -
-    - joint_states
-    - commanded_joint_states
+    - controller_state

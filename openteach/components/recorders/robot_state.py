@@ -13,14 +13,13 @@ class RobotInformationRecord(Recorder):
         self,
         robot_configs,
         recorder_function_key,
-        storage_path,
-        robot_instance=None
+        storage_path
     ):
 
         # Data function and attributes
-        # Use shared robot instance if provided, otherwise create new one
+        # Note: Don't pass record_type here as it would override the config value (False/True)
+        # which controls FrankaController's recording mode, not the function key
         self.robot = hydra.utils.instantiate(robot_configs, record_type=recorder_function_key)
-
         self.keypoint_function = self.robot.recorder_functions[recorder_function_key]
 
         # Timer

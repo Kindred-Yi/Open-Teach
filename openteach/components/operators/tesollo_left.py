@@ -7,7 +7,18 @@ from openteach.robot.tesollo.tesollo_retargeters import TesolloJointControl
 from openteach.robot.tesollo.tesollo_left import TesolloLeftHand
 from openteach.utils.files import *
 from openteach.utils.timer import FrequencyTimer
+from openteach.utils.vectorops import calculate_vector_angle
 from openteach.constants import *
+
+# Coordination mode labels
+COORD_NO_ACTION = 0
+COORD_LOOSELY_COUPLED = 1
+COORD_UNIMANUAL_LEFT = 2
+COORD_UNIMANUAL_RIGHT = 3
+COORD_TIGHTLY_ASYM_LDOM = 4
+COORD_TIGHTLY_ASYM_RDOM = 5
+COORD_TIGHTLY_SYMMETRIC = 6
+
 
 class TesolloLeftHandOperator(Operator):
     def __init__(self, host, transformed_keypoints_port, finger_configs):
@@ -27,11 +38,11 @@ class TesolloLeftHandOperator(Operator):
         )
         # Initializing the  finger configs
         self.finger_configs = finger_configs
-        
+
         #Initializing the solvers for tesollo hand
         self.finger_joint_solver = TesolloJointControl()
 
-        
+
         self._robot = TesolloLeftHand()
 
         # Initialzing the moving average queues
@@ -41,15 +52,17 @@ class TesolloLeftHandOperator(Operator):
             'middle': [],
         }
 
-
-
         self._timer = FrequencyTimer(60)
 
-        # Using 3 dimensional thumb motion or two dimensional thumb motion
-        if self.finger_configs.get('three_dim', False):
-            self.thumb_angle_calculator = self._get_3d_thumb_angles
-        else:
-            self.thumb_angle_calculator = self._get_2d_thumb_angles
+        # Pinch toggle state for grasp locking
+        self._grasp_locked = False  # False = normal mode, True = locked mode (3rd joint = 0)
+        self._prev_pinch_detected = False  # For edge detection
+        self._pinch_threshold = 0.03  # Distance threshold for ring-thumb pinch (meters)
+
+        # Coordination mode state
+        self._locked_angles = None  # Cached angles when gripper is locked
+        self._slowdown_alpha = 0.15  # Interpolation factor for speed reduction (smaller = slower)
+
 
     @property
     def timer(self):
@@ -62,11 +75,11 @@ class TesolloLeftHandOperator(Operator):
     @property
     def transformed_arm_keypoint_subscriber(self):
         return self._transformed_arm_keypoint_subscriber
-    
+
     @property
     def transformed_hand_keypoint_subscriber(self):
         return self._transformed_hand_keypoint_subscriber
-    
+
     # This function differentiates between the real robot and simulation
     def return_real(self):
         return True
@@ -77,9 +90,32 @@ class TesolloLeftHandOperator(Operator):
         return dict(
             index = np.vstack([raw_keypoints[0], raw_keypoints[OCULUS_JOINTS['index']]]),
             middle = np.vstack([raw_keypoints[0], raw_keypoints[OCULUS_JOINTS['middle']]]),
-            thumb =  np.vstack([raw_keypoints[0], raw_keypoints[OCULUS_JOINTS['thumb']]])
+            thumb =  np.vstack([raw_keypoints[0], raw_keypoints[OCULUS_JOINTS['thumb']]]),
+            ring_tip = raw_keypoints[OCULUS_JOINTS['ring'][-1]],  # Ring fingertip
+            thumb_tip = raw_keypoints[OCULUS_JOINTS['thumb'][-1]]  # Thumb fingertip
         )
-        
+
+    def _detect_pinch_and_toggle(self, hand_keypoints):
+        """
+        Detect ring finger and thumb pinch gesture and toggle grasp lock state.
+        Uses edge detection to only toggle on pinch start (not during hold).
+        """
+        # Calculate distance between ring fingertip and thumb fingertip
+        ring_tip = hand_keypoints['ring_tip']
+        thumb_tip = hand_keypoints['thumb_tip']
+        distance = np.linalg.norm(ring_tip - thumb_tip)
+
+        # Check if currently pinching
+        is_pinching = distance < self._pinch_threshold
+
+        # Edge detection: toggle only on rising edge (non-pinch -> pinch)
+        if is_pinching and not self._prev_pinch_detected:
+            self._grasp_locked = not self._grasp_locked
+            print(f"[TesolloLeft] Pinch detected! Grasp lock: {'ON' if self._grasp_locked else 'OFF'}")
+
+        # Update previous state for next iteration
+        self._prev_pinch_detected = is_pinching
+
     # Generate frozen angles for the fingers
     def _generate_frozen_angles(self, joint_angles, finger_type):
         for idx in range(TESOLLO_JOINTS_PER_FINGER):
@@ -90,30 +126,52 @@ class TesolloLeftHandOperator(Operator):
 
         return joint_angles
 
-    # Get robot thumb angles when moving only in 2D motion
-    def _get_2d_thumb_angles(self, thumb_keypoints, curr_angles):
-        # For tesollo, use joint position control like other fingers
-        return self.finger_joint_solver.calculate_finger_angles(
-            finger_type='thumb',
-            finger_joint_coords=thumb_keypoints,
-            curr_angles=curr_angles,
-            moving_avg_arr=self.moving_average_queues['thumb']
-        )
+    def _should_lock_gripper(self, coord_mode):
+        """Check if this (left) hand should lock its gripper based on coordination mode."""
+        # Left hand locks when:
+        #   - Unimanual Left (label 2): left hand is grasping -> lock left
+        #   - Tightly Asym L-Dom (label 4): both hands grasping -> lock both
+        #   - Tightly Asym R-Dom (label 5): both hands grasping -> lock both
+        #   - Tightly Symmetric (label 6): both hands grasping -> lock both
+        return coord_mode in (COORD_UNIMANUAL_LEFT,
+                              COORD_TIGHTLY_ASYM_LDOM,
+                              COORD_TIGHTLY_ASYM_RDOM,
+                              COORD_TIGHTLY_SYMMETRIC)
 
-    # Get robot thumb angles when moving in 3D motion
-    def _get_3d_thumb_angles(self, thumb_keypoints, curr_angles):
-        # For tesollo, use joint position control like other fingers
-        return self.finger_joint_solver.calculate_finger_angles(
-            finger_type='thumb',
-            finger_joint_coords=thumb_keypoints,
-            curr_angles=curr_angles,
-            moving_avg_arr=self.moving_average_queues['thumb']
-        )
-    
+    def _should_slow_down(self, coord_mode):
+        """Check if this (left) hand should slow down (non-dominant in tightly asymmetric)."""
+        # Left hand slows down when right is dominant
+        return coord_mode == COORD_TIGHTLY_ASYM_RDOM
+
     # Apply the retargeted angles to the robot
     def _apply_retargeted_angles(self):
         hand_keypoints = self._get_finger_coords()
+
+        # Detect ring-thumb pinch and toggle grasp lock state
+        self._detect_pinch_and_toggle(hand_keypoints)
+
+        # Get coordination mode from CoordinationPredictor
+        coord_mode = self.robot.get_coordination_mode()
+
+        # Check if gripper should be locked by coordination prediction
+        if self._should_lock_gripper(coord_mode):
+            if self._locked_angles is not None:
+                # Keep sending locked angles
+                self.robot.move(self._locked_angles)
+                # Still need to consume wrist pose to avoid stale data
+                hand_frame = self.transformed_arm_keypoint_subscriber.recv_keypoints()
+                if hand_frame is not None:
+                    hand_frame = np.asanyarray(hand_frame).reshape(4, 3)
+                    self.robot.set_wrist_pose(hand_frame)
+                return
+            # else: first frame of lock, fall through to compute angles and cache them
+
         desired_joint_angles = copy(self.robot.get_joint_position())
+        index_vec = hand_keypoints['index'][2] - hand_keypoints['index'][1]
+        middle_vec = hand_keypoints['middle'][2] - hand_keypoints['middle'][1]
+        spread = calculate_vector_angle(index_vec, middle_vec)
+
+        grasp_type = 'precision' if self._grasp_locked else 'power'
 
         # Movement for the index finger with option to freeze the finger
         if not self.finger_configs['freeze_index'] and not self.finger_configs['no_index']:
@@ -121,7 +179,9 @@ class TesolloLeftHandOperator(Operator):
                 finger_type = 'index',
                 finger_joint_coords = hand_keypoints['index'],
                 curr_angles = desired_joint_angles,
-                moving_avg_arr = self.moving_average_queues['index']
+                moving_avg_arr = self.moving_average_queues['index'],
+                spread = spread,
+                grasp = grasp_type
             )
         elif self.finger_configs['freeze_index']:
             self._generate_frozen_angles(desired_joint_angles, 'index')
@@ -135,7 +195,9 @@ class TesolloLeftHandOperator(Operator):
                 finger_type = 'middle',
                 finger_joint_coords = hand_keypoints['middle'],
                 curr_angles = desired_joint_angles,
-                moving_avg_arr = self.moving_average_queues['middle']
+                moving_avg_arr = self.moving_average_queues['middle'],
+                spread = spread,
+                grasp = grasp_type
             )
         elif self.finger_configs['freeze_middle']:
             self._generate_frozen_angles(desired_joint_angles, 'middle')
@@ -145,12 +207,42 @@ class TesolloLeftHandOperator(Operator):
 
         # Movement for the thumb finger with option to freeze the finger
         if not self.finger_configs['freeze_thumb'] and not self.finger_configs['no_thumb']:
-            desired_joint_angles = self.thumb_angle_calculator(hand_keypoints['thumb'], desired_joint_angles) # Passing all thumb coordinates
+            desired_joint_angles = self.finger_joint_solver.calculate_finger_angles(
+                finger_type = 'thumb',
+                finger_joint_coords = hand_keypoints['thumb'],
+                curr_angles = desired_joint_angles,
+                moving_avg_arr = self.moving_average_queues['thumb'],
+                spread = spread,
+                grasp = grasp_type
+            )
         elif self.finger_configs['freeze_thumb']:
             self._generate_frozen_angles(desired_joint_angles, 'thumb')
         else:
             print("No thumb")
             pass
-        
+
+        # Apply coordination-based modifications
+        if self._should_lock_gripper(coord_mode):
+            # First frame of lock: cache the computed angles
+            self._locked_angles = copy(desired_joint_angles)
+        else:
+            # Not locked: clear the cache
+            self._locked_angles = None
+
+            # Slow down if non-dominant in tightly asymmetric
+            if self._should_slow_down(coord_mode):
+                current_angles = self.robot.get_joint_position()
+                if current_angles is not None:
+                    alpha = self._slowdown_alpha
+                    desired_joint_angles = (
+                        current_angles * (1 - alpha) + desired_joint_angles * alpha
+                    )
+
         # Move the robot
         self.robot.move(desired_joint_angles)
+
+        # Publish wrist pose (hand frame) for recording
+        hand_frame = self.transformed_arm_keypoint_subscriber.recv_keypoints(flags=1)  # non-blocking
+        if hand_frame is not None:
+            hand_frame = np.asanyarray(hand_frame).reshape(4, 3)
+            self.robot.set_wrist_pose(hand_frame)

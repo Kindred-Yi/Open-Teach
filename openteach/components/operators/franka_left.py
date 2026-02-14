@@ -11,6 +11,11 @@ from openteach.robot.franka_left import FrankaLeft
 from scipy.spatial.transform import Rotation, Slerp
 from .operator import Operator
 from scipy.spatial.transform import Rotation as R
+from openteach.ros_links.coordination_listener import CoordinationListener
+
+# Coordination mode labels
+COORD_TIGHTLY_SYMMETRIC = 6
+
 
 class Filter:
     def __init__(self, state, comp_ratio=0.6):
@@ -82,6 +87,12 @@ class FrankaLeftArmOperator(Operator):
         # Start in STOP state so first pinch starts control
         self.pause_flag=0
 
+        # Coordination mode: ROS2 listener for /coordination_mode and arm pose sharing
+        self._coord_listener = CoordinationListener(hand_type='left')
+        # Tightly Symmetric offset state
+        self._symmetric_offset = None  # Recorded offset when entering tightly symmetric mode
+        self._prev_coord_mode = 0
+
 
     @property
     def timer(self):
@@ -94,7 +105,7 @@ class FrankaLeftArmOperator(Operator):
     @property
     def transformed_hand_keypoint_subscriber(self):
         return self._transformed_hand_keypoint_subscriber
-    
+
     @property
     def transformed_arm_keypoint_subscriber(self):
         return self._transformed_arm_keypoint_subscriber
@@ -103,7 +114,7 @@ class FrankaLeftArmOperator(Operator):
     def _get_hand_frame(self):
         for i in range(10):
             data = self.transformed_arm_keypoint_subscriber.recv_keypoints(flags=zmq.NOBLOCK)
-            if not data is None: break 
+            if not data is None: break
         if data is None: return None
         return np.asanyarray(data).reshape(4, 3)
 
@@ -111,12 +122,12 @@ class FrankaLeftArmOperator(Operator):
     def _get_resolution_scale_mode(self):
         data = self._arm_resolution_subscriber.recv_keypoints()
         res_scale = np.asanyarray(data).reshape(1)[0] # Make sure this data is one dimensional
-        return res_scale  
+        return res_scale
 
     # Get the arm teleop state from the hand keypoints
     def _get_arm_teleop_state_from_hand_keypoints(self):
         pause_state ,pause_status,pause_left =self.get_pause_state_from_hand_keypoints()
-        pause_status =np.asanyarray(pause_status).reshape(1)[0] 
+        pause_status =np.asanyarray(pause_status).reshape(1)[0]
         return pause_state,pause_status,pause_left
 
     # Converts a frame to a homogenous transformation matrix
@@ -133,7 +144,7 @@ class FrankaLeftArmOperator(Operator):
 
     # Converts Homogenous Transformation Matrix to Cartesian Coords
     def _homo2cart(self, homo_mat):
-        
+
         t = homo_mat[:3, 3]
         R = Rotation.from_matrix(
             homo_mat[:3, :3]).as_quat()
@@ -143,6 +154,13 @@ class FrankaLeftArmOperator(Operator):
         )
 
         return cart
+
+    # Converts Cartesian Coords to Homogenous Transformation Matrix
+    def _cart2homo(self, cart_pose):
+        homo_mat = np.eye(4)
+        homo_mat[:3, 3] = cart_pose[:3]
+        homo_mat[:3, :3] = Rotation.from_quat(cart_pose[3:7]).as_matrix()
+        return homo_mat
 
     # Gets the Scaled Resolution pose
     def _get_scaled_cart_pose(self, moving_robot_homo_mat):
@@ -157,7 +175,7 @@ class FrankaLeftArmOperator(Operator):
         diff_in_translation = unscaled_cart_pose[:3] - current_cart_pose[:3]
         scaled_diff_in_translation = diff_in_translation * self.resolution_scale
         # print('SCALED_DIFF_IN_TRANSLATION: {}'.format(scaled_diff_in_translation))
-        
+
         scaled_cart_pose = np.zeros(7)
         scaled_cart_pose[3:] = unscaled_cart_pose[3:] # Get the rotation directly
         scaled_cart_pose[:3] = current_cart_pose[:3] + scaled_diff_in_translation # Get the scaled translation only
@@ -189,14 +207,24 @@ class FrankaLeftArmOperator(Operator):
             self.pause_cnt+=1
             if self.pause_cnt==1:
                 self.prev_pause_flag=self.pause_flag
-                self.pause_flag = not self.pause_flag       
+                self.pause_flag = not self.pause_flag
         else:
             self.pause_cnt=0
         pause_state = np.asanyarray(self.pause_flag).reshape(1)[0]
-        pause_status= False  
+        pause_status= False
         if pause_state!= self.prev_pause_flag:
-            pause_status= True 
+            pause_status= True
         return pause_state , pause_status , pause_left
+
+    def _compute_follower_pose(self, right_arm_pose):
+        """Compute left arm target pose to maintain the recorded offset from right arm.
+
+        offset = T_right^{-1} * T_left  (recorded at symmetric mode entry)
+        T_left_new = T_right_new * offset
+        """
+        T_right = self._cart2homo(right_arm_pose)
+        T_left = T_right @ self._symmetric_offset
+        return self._homo2cart(T_left)
 
     # Apply the retargeted angles
     def _apply_retargeted_angles(self, log=False):
@@ -204,10 +232,10 @@ class FrankaLeftArmOperator(Operator):
         # See if there is a reset in the teleop
         new_arm_teleop_state,pause_status,pause_left = self._get_arm_teleop_state_from_hand_keypoints()
         if self.is_first_frame or (self.arm_teleop_state == ARM_TELEOP_STOP and new_arm_teleop_state == ARM_TELEOP_CONT):
-            moving_hand_frame = self._reset_teleop() 
+            moving_hand_frame = self._reset_teleop()
         else:
-            moving_hand_frame = self._get_hand_frame() # Should get the hand frame 
-        self.arm_teleop_state = new_arm_teleop_state 
+            moving_hand_frame = self._get_hand_frame() # Should get the hand frame
+        self.arm_teleop_state = new_arm_teleop_state
 
         # Get the arm resolution
         arm_teleoperation_scale_mode = self._get_resolution_scale_mode()
@@ -216,9 +244,9 @@ class FrankaLeftArmOperator(Operator):
         elif arm_teleoperation_scale_mode == ARM_LOW_RESOLUTION:
             self.resolution_scale = 0.6
 
-        if moving_hand_frame is None: 
+        if moving_hand_frame is None:
             return # It means we are not on the arm mode yet instead of blocking it is directly returning
-        
+
         # Get the moving hand frame
         self.hand_moving_H = self._turn_frame_to_homo_mat(moving_hand_frame)
 
@@ -249,7 +277,42 @@ class FrankaLeftArmOperator(Operator):
         # Use a Filter
         if self.use_filter:
             final_pose = self.comp_filter(final_pose)
-            
+
+        # Check coordination mode for Tightly Symmetric handling
+        coord_mode = self._coord_listener.get_coordination_mode()
+
+        if coord_mode == COORD_TIGHTLY_SYMMETRIC:
+            right_arm_pose = self._coord_listener.get_other_arm_pose()
+
+            if self._prev_coord_mode != COORD_TIGHTLY_SYMMETRIC:
+                # Just entered symmetric mode: record offset
+                if right_arm_pose is not None:
+                    T_right = self._cart2homo(right_arm_pose)
+                    T_left = self._cart2homo(final_pose)
+                    # offset = T_right^{-1} * T_left
+                    self._symmetric_offset = np.linalg.inv(T_right) @ T_left
+                    print("[FrankaLeft] Entering Tightly Symmetric mode - offset recorded")
+
+            if self._symmetric_offset is not None and right_arm_pose is not None:
+                # Follow right arm with fixed offset
+                final_pose = self._compute_follower_pose(right_arm_pose)
+        else:
+            # Exiting symmetric mode
+            if self._prev_coord_mode == COORD_TIGHTLY_SYMMETRIC and self._symmetric_offset is not None:
+                print("[FrankaLeft] Exiting Tightly Symmetric mode")
+                # Reset teleop so the arm resumes from current position smoothly
+                self.robot_init_H = self.robot.get_pose()['position']
+                first_hand_frame = self._get_hand_frame()
+                if first_hand_frame is not None:
+                    self.hand_init_H = self._turn_frame_to_homo_mat(first_hand_frame)
+                    self.hand_init_t = copy(self.hand_init_H[:3, 3])
+            self._symmetric_offset = None
+
+        self._prev_coord_mode = coord_mode
+
+        # Publish own pose for cross-arm coordination
+        self._coord_listener.publish_arm_pose(final_pose)
+
         # Move the robot arm
         # Make it nonstop for testing
         # if self.arm_teleop_state == ARM_TELEOP_CONT:

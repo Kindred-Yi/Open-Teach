@@ -10,7 +10,8 @@ class FrankaLeft(RobotWrapper):
     def recorder_functions(self):
         return {
             'joint_states': self.get_joint_state,
-            'cartesian_states': self.get_cartesian_state
+            'cartesian_states': self.get_cartesian_state,
+            'states': self.get_states
         }
 
     @property
@@ -24,6 +25,9 @@ class FrankaLeft(RobotWrapper):
     # State information functions
     def get_joint_state(self):
         return self._controller.get_arm_joint_state()
+
+    def get_states(self):
+        return self._controller.get_arm_state()
     
     def get_joint_velocity(self):
         pass

@@ -55,7 +55,20 @@ class DexArmControl():
         )
 
         return joint_state
-    
+
+    def get_arm_state(self):
+        """Get both joint and cartesian states in a single call"""
+        state = copy(self.franka.get_state())
+
+        combined_state = dict(
+            joint_position = np.array(state['joint_position'], dtype=np.float32),
+            cartesian_position = np.array(state['cartesian_position'], dtype=np.float32).flatten(),
+            cartesian_orientation = np.array(state['cartesian_orientation'], dtype=np.float32).flatten(),
+            timestamp = time.time()
+        )
+
+        return combined_state
+
     def get_arm_pose(self):
         pose = copy(self.franka.get_pose())
 

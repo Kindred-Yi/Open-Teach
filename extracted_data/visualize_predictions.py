@@ -11,22 +11,23 @@ import cv2
 import joblib
 from pathlib import Path
 
-# === 配置 ===
+# === 1. 修改配置字典 ===
 CONFIG = {
-    'demo_path': 'demonstration_12',
+    'demo_path': 'demonstration_63',           # 目标文件夹
     'video_file': 'cam_0_rgb_video.avi',
-    'features_file': 'lstm_danny_features.h5',
-    'model_path': 'best_lstm_merged_model.pth',
-    'scaler_path': 'scaler_merged.pkl',
-    'output_video': 'demo12_with_predictions.mp4',
+    'features_file': 'lstm_danny_features.h5', # 确保这是包含2维特征的文件
+    'model_path': '213grasp_model.pth',    # 你刚刚训练好的二元模型
+    'scaler_path': '213scaler_merged.pkl',        # 对应的标准化器
+    'output_video': 'demo63_213results.mp4',
     'window_size': 50,
-    'input_dim': 8,
-    'hidden_dim': 128,
-    'num_classes': 7,
+    'input_dim': 25,                            # 关键：改为2维 (L/R error)
+    'hidden_dim': 128,                          # 关键：改为你二元训练时的64
+    'layer_dim': 1,
+    'num_classes': 7,                          # 
     'device': 'cuda' if torch.cuda.is_available() else 'cpu'
 }
 
-# 类别映射 (ID -> 名称)
+
 LABEL_NAMES = {
     0: "No Action",
     1: "Loosely Coupled",
@@ -37,7 +38,6 @@ LABEL_NAMES = {
     6: "Tightly Symmetric"
 }
 
-# 类别对应的颜色 (BGR格式)
 LABEL_COLORS = {
     0: (128, 128, 128),  # 灰色
     1: (0, 255, 0),      # 绿色
@@ -45,21 +45,24 @@ LABEL_COLORS = {
     3: (0, 0, 255),      # 红色
     4: (255, 255, 0),    # 青色
     5: (255, 0, 255),    # 洋红
-    6: (0, 255, 255)     # 黄色
+    6: (0, 255, 255)
 }
 
 # === LSTM模型定义 ===
 class SimpleLSTM(nn.Module):
-    def __init__(self, input_dim, hidden_dim, num_classes):
+    def __init__(self, input_dim, hidden_dim, num_classes, num_layers):
         super(SimpleLSTM, self).__init__()
-        self.lstm = nn.LSTM(input_dim, hidden_dim, batch_first=True)
+        # 如果你训练时用了 num_layers=1，这里也要保持一致
+        self.lstm = nn.LSTM(input_dim, hidden_dim, batch_first=True, num_layers=num_layers)
         self.fc = nn.Linear(hidden_dim, num_classes)
 
     def forward(self, x):
-        out, _ = self.lstm(x)
-        last_step_out = out[:, -1, :]
+        out, (h_n, c_n) = self.lstm(x)
+        # 取最后一个时间步的输出
+        last_step_out = out[:, -1, :] 
         logits = self.fc(last_step_out)
         return logits
+
 
 def load_model_and_scaler():
     """加载训练好的模型和scaler"""
@@ -70,9 +73,10 @@ def load_model_and_scaler():
 
     # 创建模型
     model = SimpleLSTM(
-        CONFIG['input_dim'],
-        CONFIG['hidden_dim'],
-        CONFIG['num_classes']
+        input_dim=CONFIG['input_dim'],
+        hidden_dim=CONFIG['hidden_dim'],
+        num_classes=CONFIG['num_classes'],
+        num_layers=CONFIG['layer_dim']  
     ).to(CONFIG['device'])
 
     # 加载权重
@@ -276,25 +280,21 @@ def main():
     # 1. 加载模型
     model, scaler = load_model_and_scaler()
 
-    # 2. 加载特征数据
     X, Y = load_features()
 
-    # 3. 进行预测
+
+
     predictions = predict_all_frames(model, scaler, X)
-
-    # 4. 计算准确率
-    # 注意：Y已经裁剪了第0帧，长度为N-1
-    # predictions是从第50帧开始的，对应Y的索引49开始
-    ground_truth = Y[CONFIG['window_size'] - 1:]  # 从索引49开始
+    
+    # 这里的索引对齐：
+    # 因为 X 和 Y 在 feature_generate 中都做了 [1:] 切片，
+    # 所以 Y 的第 49 个元素对应视频的第 50 帧
+    ground_truth = Y[CONFIG['window_size'] - 1:] 
+    
     calculate_accuracy(predictions, ground_truth)
-
-    # 5. 生成标注视频
+    
     video_path = Path(CONFIG['demo_path']) / CONFIG['video_file']
     create_annotated_video(video_path, predictions, ground_truth)
-
-    print("\n" + "=" * 60)
-    print("完成！")
-    print("=" * 60)
 
 if __name__ == "__main__":
     main()

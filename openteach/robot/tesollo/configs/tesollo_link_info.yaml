@@ -10,7 +10,7 @@ links_info:
   index:
     name: 'Index'
     link: 'F1_01'
-    offset: 0
+    offset: 4
     joint_min: 
       - -1.0472    # F1M1: -60° (rotatory joint)
       - -1.76278   # F1M2: -101° (proximal)
@@ -26,7 +26,7 @@ links_info:
   middle:
     name: 'Middle'
     link: 'F2_01'
-    offset: 4
+    offset: 8
     joint_min: 
       - -1.91986   # F2M1: -110° (rotatory joint)
       - -1.76278   # F2M2: -101° (proximal)
@@ -42,7 +42,7 @@ links_info:
   thumb:
     name: 'Thumb'
     link: 'F3_01'
-    offset: 8
+    offset: 0
     joint_min: 
       - -0.0872665 # F3M1: -5° (rotatory joint)
       - -1.76278   # F3M2: -101° (proximal)

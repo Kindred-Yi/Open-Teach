@@ -42,7 +42,7 @@ TESOLLO_HOME_VALUES = [
 
 
 class DexArmControl(Node):
-    def __init__(self, *, rate_hz: float = 60.0, joint_names: Optional[List[str]] = None):
+    def __init__(self, *, rate_hz: float = 60.0, joint_names: Optional[List[str]] = None, hand_type: str = 'right'):
         # Initialize rclpy and node
         if not rclpy.ok():
             rclpy.init(args=None)

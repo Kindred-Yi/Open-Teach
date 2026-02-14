@@ -39,3 +39,9 @@ def calculate_angle(coord_1, coord_2, coord_3):
 
 def coord_in_bound(bound, coord):
     return cv2.pointPolygonTest(np.float32(bound), np.float32(coord), False)
+
+def calculate_vector_angle(vec1, vec2):
+    inner_product = np.inner(vec1, vec2)
+    norm = np.linalg.norm(vec1) * np.linalg.norm(vec2)
+    angle = np.arccos(np.clip(inner_product / norm, -1.0, 1.0))
+    return angle

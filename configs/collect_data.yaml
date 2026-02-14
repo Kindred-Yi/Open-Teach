@@ -10,6 +10,7 @@ storage_path: extracted_data/
 demo_num: 271
 sim_env: false
 is_xela: false
+record_vr_position: true
 host: ${host_address}
 
 

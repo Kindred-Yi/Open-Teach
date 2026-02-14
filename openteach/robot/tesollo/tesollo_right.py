@@ -15,7 +15,8 @@ class TesolloRightHand(RobotWrapper):
         # For robot configurations
         self._joint_limit_config = get_yaml_data(get_path_in_package("robot/tesollo/configs/tesollo_link_info.yaml"))['links_info']
 
-        self._data_frequency = 300
+        self._data_frequency = 60
+        self._last_wrist_pose = None  # 用于缓存最新的 wrist pose
 
     @property
     def name(self):
@@ -24,8 +25,9 @@ class TesolloRightHand(RobotWrapper):
     @property
     def recorder_functions(self):
         return {
-            'joint_states': self.get_joint_state, 
-            'commanded_joint_states': self.get_commanded_joint_state
+            'joint_states': self.get_joint_state,
+            'commanded_joint_states': self.get_commanded_joint_state,
+            'controller_state': self.get_full_controller_state
         }
 
     @property
@@ -51,6 +53,47 @@ class TesolloRightHand(RobotWrapper):
     def get_commanded_joint_position(self):
         return self._controller.get_commanded_hand_joint_position()
 
+    def get_vr_commanded_position(self):
+        """Get VR/OpenTeach sent command (bypasses hardware-level modifications)."""
+        return self._controller.get_vr_sent_command()
+
+    def get_full_controller_state(self):
+        """Get controller state with VR command instead of hardware-modified command."""
+        hw_state = self._controller.get_full_controller_state()
+        if hw_state is None:
+            return None
+
+        # Replace hardware commanded with VR commanded
+        vr_cmd = self._controller.get_vr_sent_command()
+        if vr_cmd is not None:
+            hw_state['commanded_position'] = vr_cmd
+            # Recalculate error based on VR command
+            hw_state['error_position'] = vr_cmd - hw_state['actual_position']
+
+        # Add wrist pose from VR
+        wrist_pose = self._controller.get_wrist_pose()
+        #if wrist_pose is not None:
+        #    hw_state['wrist_position'] = wrist_pose[0]  # origin_coord
+        #    hw_state['wrist_orientation'] = wrist_pose[1:]  # [cross, normal, direction]
+        
+        if wrist_pose is not None:
+            self._last_wrist_pose = wrist_pose    # 缓存最新有效值
+        if self._last_wrist_pose is not None:
+            hw_state['wrist_position'] = self._last_wrist_pose[0]
+            hw_state['wrist_orientation'] = self._last_wrist_pose[1:]
+        else:
+            hw_state['wrist_position'] = np.zeros(3, dtype=np.float32)
+            hw_state['wrist_orientation'] = np.zeros((3, 3), dtype=np.float32)
+
+        return hw_state
+
+    def get_coordination_mode(self):
+        """Get current coordination mode from CoordinationPredictor."""
+        return self._controller.get_coordination_mode()
+
+    def set_wrist_pose(self, hand_frame):
+        """Set wrist pose (hand frame) to be published via ROS2."""
+        self._controller.set_wrist_pose(hand_frame)
 
     # Getting random position initializations for the fingers
     def _get_finger_limits(self, finger_type):

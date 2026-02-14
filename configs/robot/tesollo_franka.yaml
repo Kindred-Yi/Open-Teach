@@ -33,7 +33,7 @@ visualizers:
 operators:
   # tesollo
   -
-    _target_: openteach.components.operators.tesollo.TesolloHandOperator
+    _target_: openteach.components.operators.tesollo_right.TesolloRightHandOperator
     host: ${host_address}
     transformed_keypoints_port: ${transformed_position_keypoint_port}
     finger_configs:
@@ -58,7 +58,7 @@ operators:
 controllers:
   # Tesollo
   -
-    _target_: openteach.robot.tesollo.tesollo.TesolloHand
+    _target_: openteach.robot.tesollo.tesollo_right.TesolloRightHand
   
   # Franka Arm
   -

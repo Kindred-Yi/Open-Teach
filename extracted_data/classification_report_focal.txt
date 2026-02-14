@@ -1,0 +1,17 @@
+============================================================
+Focal Loss训练 - 分类报告
+============================================================
+
+                      precision    recall  f1-score   support
+
+           No Action     0.9256    0.9627    0.9438       750
+     Loosely Coupled     0.7498    0.4311    0.5475      2642
+      Unimanual Left     0.2198    0.5944    0.3210       604
+     Unimanual Right     0.0000    0.0000    0.0000       234
+Tightly Asym (L-Dom)     0.0000    0.0000    0.0000         0
+Tightly Asym (R-Dom)     0.0000    0.0000    0.0000       125
+   Tightly Symmetric     0.1593    0.1644    0.1618       219
+
+            accuracy                         0.4932      4574
+           macro avg     0.2935    0.3075    0.2820      4574
+        weighted avg     0.6215    0.4932    0.5211      4574

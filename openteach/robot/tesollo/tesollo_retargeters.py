@@ -61,7 +61,7 @@ class TesolloJointControl(TesolloKinematicControl):
 
         return desired_angles 
 
-    def calculate_finger_angles(self, finger_type, finger_joint_coords, curr_angles, moving_avg_arr):
+    def calculate_finger_angles(self, finger_type, finger_joint_coords, curr_angles, moving_avg_arr, spread, grasp):
         translatory_angles = []
         translatory_angles.append(0)
         for idx in range(self.hand_configs['joints_per_finger'] - 2): # Ignoring the rotatory joint
@@ -79,12 +79,12 @@ class TesolloJointControl(TesolloKinematicControl):
             # Default scaling for unmapped fingers
             rotatory_factor = 0.02
 
-        if finger_type == 'index':
+        if finger_type == 'thumb':
             initial_angle = 0.0
+        elif finger_type == 'index':
+            initial_angle = -spread
         elif finger_type == 'middle':
-            initial_angle = -1.0
-        elif finger_type == 'thumb':
-            initial_angle = 1.0 
+            initial_angle = spread
 
         rotatory_angle = [self.calculate_finger_rotation(finger_joint_coords) * rotatory_factor + initial_angle]
         calc_finger_angles = [initial_angle] + translatory_angles
@@ -100,6 +100,9 @@ class TesolloJointControl(TesolloKinematicControl):
         )
         if finger_type == 'thumb':
             angle_joint3 = 1.8 * angle_joint3
+        
+        if grasp == 'precision':
+            angle_joint3 = 1.5 * angle_joint3
 
         angles.append(angle_joint3 * self.linear_scaling_factors[0])
 
@@ -109,8 +112,8 @@ class TesolloJointControl(TesolloKinematicControl):
           finger_joint_coords[4]
         )
 
-        if finger_type == 'thumb':
-            angle_joint4 = 1.5 * angle_joint4
+        if grasp == 'precision':
+            angle_joint4 = 0
 
         angles.append(angle_joint4 * self.linear_scaling_factors[1])
         filtered_angles = self._get_filtered_angles(finger_type, angles, curr_angles, moving_avg_arr)
