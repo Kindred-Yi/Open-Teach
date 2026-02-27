@@ -28,6 +28,8 @@ fish_eye_cam_port_offset: 10010
 
 resolution_button_port: 8095
 resolution_button_publish_port: 8093
+hand_command_port_right: 8096
+hand_command_port_left: 8097
 teleop_reset_port: 8100
 teleop_reset_publish_port: 8102
 gripper_publish_port_right: 8108

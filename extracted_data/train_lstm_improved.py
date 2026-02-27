@@ -7,9 +7,9 @@ import numpy as np
 from sklearn.utils.class_weight import compute_class_weight
 
 CONFIG = {
-    'input_file': '213merged_dataset_3d.h5',
-    'input_dim': 25,        # 
-    'hidden_dim': 128,      # 
+    'input_file': '219merged_dataset_3d.h5',
+    'input_dim': 5,        # 
+    'hidden_dim': 64,      # 
     'layer_dim': 1,         # 2 层 LSTM
     'dropout': 0.3,
     'num_classes': 7,      # 
@@ -86,7 +86,7 @@ def main():
         acc = 100 * correct / len(Y_val)
         print(f"Epoch {epoch+1}, Loss: {l_sum/len(train_loader):.4f}, Val Acc: {acc:.2f}%")
 
-    torch.save(model.state_dict(), "213grasp_model.pth")
+    torch.save(model.state_dict(), "219grasp_model.pth")
     print("模型已保存。")
 
 if __name__ == "__main__":

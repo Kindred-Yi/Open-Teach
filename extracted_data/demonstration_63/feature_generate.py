@@ -152,7 +152,14 @@ def main():
     feat_10 = mean_error_L[1:].reshape(-1, 1)
 
     feat_11, feat_12 = calc_relative_features_rate(pos_L, pos_R, ori_L, ori_R)
-    
+    feat11 = np.linalg.norm(feat_11, axis=1, keepdims=True)
+
+    # Feature 13/14: Gripper 关节均值 (与 error 同理，所有关节角取均值)
+    mean_joints_R = np.mean(joints_R, axis=1)
+    mean_joints_L = np.mean(joints_L, axis=1)
+    feat_13 = mean_joints_R[1:].reshape(-1, 1)
+    feat_14 = mean_joints_L[1:].reshape(-1, 1)
+
     # 截取从第1帧开始（因为后面都要做差分，会少一帧）
     # F1: Hand Offset (对应时刻 t) -> 取 [1:]
     feat_1 = hand_offset[1:].reshape(-1, 1)
@@ -184,7 +191,7 @@ def main():
     
     # 拼接 X
     X = np.hstack([
-        feat_9, feat_10, feat_3, feat_4, feat_5, feat_6, feat_11, feat_12          # 相对关系
+        feat_9, feat_10, feat_3, feat_5, feat11
     ])
     
     # 处理 Y (去掉第0帧)
@@ -222,7 +229,7 @@ def main():
         out.create_dataset('Y', data=Y, dtype='i8', compression="gzip")
         
         # 记录每一列的含义
-        col_desc = "1:Right error, 2:Left error, 3:Right trans velo, 4:Right rot velo, 5:Left trans velo, 6:Left rot velo"
+        col_desc = "1:Right error, 2:Left error, 3:Right trans velo, 4:Left trans velo, 5:Relative pos rate, 6:Right joint mean, 7:Left joint mean"
         out.attrs['columns'] = col_desc
         print(f"文件已保存至: {OUTPUT_FILE}")
         print(f"列定义: {col_desc}")

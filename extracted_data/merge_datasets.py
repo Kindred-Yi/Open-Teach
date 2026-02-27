@@ -7,7 +7,7 @@ import joblib
 # === 配置 ===
 DEMO_PATHS = {
     'train': [
-        'demonstration_60/lstm_danny_features.h5', 'demonstration_61/lstm_danny_features.h5', 'demonstration_62/lstm_danny_features.h5', 'demonstration_64/lstm_danny_features.h5', 'demonstration_65/lstm_danny_features.h5'
+        'demonstration_60/lstm_danny_features.h5', 'demonstration_61/lstm_danny_features.h5', 'demonstration_62/lstm_danny_features.h5', 'demonstration_64/lstm_danny_features.h5', 'demonstration_65/lstm_danny_features.h5', 'demonstration_66/lstm_danny_features.h5'
     ],
     'val': [
         'demonstration_63/lstm_danny_features.h5'
@@ -15,8 +15,8 @@ DEMO_PATHS = {
 }
 
 WINDOW_SIZE = 50  # 历史窗口长度
-OUTPUT_FILE = '213merged_dataset_3d.h5'
-SCALER_FILE = '213scaler_merged.pkl'
+OUTPUT_FILE = '219merged_dataset_3d.h5'
+SCALER_FILE = '219scaler_merged.pkl'
 
 def create_windows(X, Y, window_size):
     """

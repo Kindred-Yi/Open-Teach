@@ -7,7 +7,7 @@ Data pipeline matching training EXACTLY:
     ros2 topics → DexArmControl subscribes → TesolloHand.get_full_controller_state()
     → RobotInformationRecord saves H5 @ 60Hz
     → align_data.py interpolates to 30fps (camera rate)
-    → feature_generate.py computes 25-dim features
+    → feature_generate.py computes 7-dim features
     → merge_datasets.py creates 50-frame windows → train LSTM
 
   Inference (this):
@@ -49,7 +49,6 @@ try:
 except ImportError as e:
     raise ImportError("Failed to import rclpy.") from e
 
-from sensor_msgs.msg import JointState
 from control_msgs.msg import JointTrajectoryControllerState
 from std_msgs.msg import Int32
 
@@ -138,44 +137,26 @@ class CoordinationNode(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
         )
-        cmd_qos = QoSProfile(
-            reliability=ReliabilityPolicy.RELIABLE,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=10,
-        )
-        # VR streams are high-frequency; drop-old with best-effort to avoid backlog.
-        vr_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=1,
-        )
 
-        # --- Right hand subscriptions ---
+        # --- Right hand subscriptions (controller_state only, vr_cmd via ZMQ) ---
         self._right_controller_state = None
         self.create_subscription(
             JointTrajectoryControllerState,
             '/right/dg3f_b_controller/controller_state',
             self._cb_right_ctrl, state_qos)
 
-        self._right_vr_cmd = None
-        self.create_subscription(
-            JointState, '/right/vr_sent_command',
-            self._cb_right_vr_cmd, vr_qos)
+        self._right_vr_cmd = None  # Set from ZMQ in main loop
 
-        # --- Left hand subscriptions ---
+        # --- Left hand subscriptions (controller_state only, vr_cmd via ZMQ) ---
         self._left_controller_state = None
         self.create_subscription(
             JointTrajectoryControllerState,
             '/left/dg3f_b_controller/controller_state',
             self._cb_left_ctrl, state_qos)
 
-        self._left_vr_cmd = None
-        self.create_subscription(
-            JointState, '/left/vr_sent_command',
-            self._cb_left_vr_cmd, vr_qos)
+        self._left_vr_cmd = None  # Set from ZMQ in main loop
 
-        # Wrist poses are received directly via ZMQ in the main loop,
-        # bypassing ROS2 for lower latency.
+        # Wrist poses are received directly via ZMQ in the main loop.
         self._right_wrist_pose = None
         self._left_wrist_pose = None
 
@@ -191,27 +172,33 @@ class CoordinationNode(Node):
         self._right_last_wrist_pose = None
         self._left_last_wrist_pose = None
 
+        # Sequence counters for staleness detection: incremented in each callback
+        self._right_ctrl_seq = 0
+        self._right_vr_seq = 0
+        self._left_ctrl_seq = 0
+        self._left_vr_seq = 0
+        self._right_wrist_seq = 0
+        self._left_wrist_seq = 0
+
         self.get_logger().info("CoordinationNode ready.")
 
-    # ---- Callbacks ----
+    # ---- Callbacks (with sequence counters for staleness detection) ----
     def _cb_right_ctrl(self, msg):
         self._right_controller_state = msg
-
-    def _cb_right_vr_cmd(self, msg):
-        self._right_vr_cmd = np.array(msg.position, dtype=np.float32)
+        self._right_ctrl_seq += 1
 
     def _cb_left_ctrl(self, msg):
         self._left_controller_state = msg
-
-    def _cb_left_vr_cmd(self, msg):
-        self._left_vr_cmd = np.array(msg.position, dtype=np.float32)
+        self._left_ctrl_seq += 1
 
     def set_wrist_pose(self, hand, wrist_pose):
         """Set wrist pose received from ZMQ (called from main loop)."""
         if hand == 'right':
             self._right_wrist_pose = wrist_pose
+            self._right_wrist_seq += 1
         else:
             self._left_wrist_pose = wrist_pose
+            self._left_wrist_seq += 1
 
     # ---- State assembly (matching tesollo_{right,left}.py get_full_controller_state) ----
     def _assemble_hand_state(self, controller_state, vr_cmd, wrist_pose, last_wrist_pose):
@@ -305,6 +292,8 @@ class CoordinationPredictor(Component):
                  host='0.0.0.0',
                  right_keypoints_port=8089,
                  left_keypoints_port=8099,
+                 right_hand_command_port=8096,
+                 left_hand_command_port=8097,
                  window_size=50,
                  smoothing_count=5, data_frequency=60, feature_frequency=30):
         self.notify_component_start('coordination predictor')
@@ -316,6 +305,8 @@ class CoordinationPredictor(Component):
         self._host = host
         self._right_keypoints_port = right_keypoints_port
         self._left_keypoints_port = left_keypoints_port
+        self._right_hand_cmd_port = right_hand_command_port
+        self._left_hand_cmd_port = left_hand_command_port
 
         # Resolve paths relative to project root if needed
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(
@@ -340,7 +331,7 @@ class CoordinationPredictor(Component):
         self._scaler = joblib.load(self.scaler_path)
 
         self._model = SimpleLSTM(
-            input_dim=25, hidden_dim=128, num_classes=7, num_layers=1
+            input_dim=5, hidden_dim=64, num_classes=7, num_layers=1
         ).to(self._device)
         self._model.load_state_dict(
             torch.load(self.model_path, map_location=self._device))
@@ -349,32 +340,29 @@ class CoordinationPredictor(Component):
         print(f"[CoordinationPredictor] Scaler loaded from {self.scaler_path}")
 
     def _compute_feature(self, prev_right, prev_left, curr_right, curr_left):
-        """Compute a single 25-dim feature vector from two consecutive frames.
+        """Compute a single 7-dim feature vector from two consecutive frames.
 
-        Uses state dicts assembled with the same logic as
-        TesolloHand.get_full_controller_state(), matching feature_generate.py:
-            X = np.hstack([feat_9, feat_10, feat_3, feat_4, feat_5, feat_6, feat_11, feat_12])
+        Matching feature_generate.py:
+            X = np.hstack([feat_9, feat_10, feat_3, feat_5, feat11, feat_13, feat_14])
 
-            feat_9:  mean right gripper error  (1)
-            feat_10: mean left gripper error   (1)
-            feat_3:  right trans velocity      (1)
-            feat_4:  right rot velocity 6D     (6)
-            feat_5:  left trans velocity       (1)
-            feat_6:  left rot velocity 6D      (6)
-            feat_11: relative pos rate         (3)
-            feat_12: relative rot rate         (6)
-            Total: 25
+            feat_9:  mean right gripper error       (1)
+            feat_10: mean left gripper error        (1)
+            feat_3:  right trans velocity (scalar)  (1)
+            feat_5:  left trans velocity (scalar)   (1)
+            feat11:  relative pos rate norm         (1)
+            feat_13: right joint mean               (1)
+            feat_14: left joint mean                (1)
+            Total: 7
         """
-        # Wrist data (from get_full_controller_state → wrist_position/wrist_orientation)
+        # Wrist data
         pos_R = curr_right['wrist_position']
-        rot_R = curr_right['wrist_orientation']
         pos_L = curr_left['wrist_position']
         rot_L = curr_left['wrist_orientation']
-
         pos_R_prev = prev_right['wrist_position']
-        rot_R_prev = prev_right['wrist_orientation']
         pos_L_prev = prev_left['wrist_position']
         rot_L_prev = prev_left['wrist_orientation']
+        rot_R = curr_right['wrist_orientation']
+        rot_R_prev = prev_right['wrist_orientation']
 
         # feat_9: mean right gripper error (clip negatives to 0, then mean)
         feat_9 = float(np.mean(np.maximum(curr_right['error_position'], 0)))
@@ -382,36 +370,33 @@ class CoordinationPredictor(Component):
         # feat_10: mean left gripper error
         feat_10 = float(np.mean(np.maximum(curr_left['error_position'], 0)))
 
-        # feat_3: right translational velocity
+        # feat_3: right translational velocity (scalar)
         feat_3 = calc_trans_velocity(pos_R_prev, pos_R)
 
-        # feat_4: right rotational velocity (6D)
-        feat_4 = calc_rot_6d_velocity(rot_R_prev, rot_R)  # (6,)
-
-        # feat_5: left translational velocity
+        # feat_5: left translational velocity (scalar)
         feat_5 = calc_trans_velocity(pos_L_prev, pos_L)
 
-        # feat_6: left rotational velocity (6D)
-        feat_6 = calc_rot_6d_velocity(rot_L_prev, rot_L)  # (6,)
-
-        # feat_11, feat_12: relative features
-        feat_11, feat_12 = calc_relative_features_rate(
+        # feat11: relative position rate (norm of 3D vector)
+        feat_11, _ = calc_relative_features_rate(
             pos_L_prev, pos_R_prev, rot_L_prev, rot_R_prev,
             pos_L, pos_R, rot_L, rot_R
         )
+        feat11 = float(np.linalg.norm(feat_11))
 
-        # Stack in the same order as feature_generate.py
-        feature = np.concatenate([
-            [feat_9], [feat_10],       # 2
-            [feat_3], feat_4,          # 1 + 6 = 7
-            [feat_5], feat_6,          # 1 + 6 = 7
-            feat_11, feat_12           # 3 + 6 = 9
-        ])  # Total: 25
+        # feat_13: right joint mean (mean of all actual joint positions)
+        feat_13 = float(np.mean(curr_right['actual_position']))
 
-        return feature.astype(np.float32)
+        # feat_14: left joint mean
+        feat_14 = float(np.mean(curr_left['actual_position']))
+
+        feature = np.array([
+            feat_9, feat_10, feat_3, feat_5, feat11
+        ], dtype=np.float32)
+
+        return feature
 
     def _predict(self, feature_window):
-        """Run LSTM inference on a (window_size, 25) feature window.
+        """Run LSTM inference on a (window_size, 7) feature window.
         Returns (predicted_class, probabilities_array, timing_dict).
         """
         cpu_start = time.process_time()
@@ -471,6 +456,21 @@ class CoordinationPredictor(Component):
               f"right={self._host}:{self._right_keypoints_port}, "
               f"left={self._host}:{self._left_keypoints_port}")
 
+        # ZMQ subscribers for hand command intent (from tesollo operators)
+        self._right_hand_cmd_sub = ZMQKeypointSubscriber(
+            host=self._host,
+            port=self._right_hand_cmd_port,
+            topic='hand_command',
+        )
+        self._left_hand_cmd_sub = ZMQKeypointSubscriber(
+            host=self._host,
+            port=self._left_hand_cmd_port,
+            topic='hand_command',
+        )
+        print(f"[CoordinationPredictor] ZMQ hand command: "
+              f"right={self._host}:{self._right_hand_cmd_port}, "
+              f"left={self._host}:{self._left_hand_cmd_port}")
+
         # Load model and scaler
         self._load_model_and_scaler()
 
@@ -497,6 +497,48 @@ class CoordinationPredictor(Component):
         frame_idx = 0
         waiting_printed = False
 
+        # ── Feature logging to CSV ──
+        _log_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__))))),
+            'logs', f'coord_features_{int(time.time())}.csv')
+        os.makedirs(os.path.dirname(_log_path), exist_ok=True)
+        _feat_log = open(_log_path, 'w')
+        # Header
+        feat_names = [
+            'R_err_mean', 'L_err_mean',
+            'R_trans_vel', 'L_trans_vel',
+            'rel_pos_rate_norm',
+            'R_joint_mean', 'L_joint_mean',
+        ]
+        _feat_log.write(
+            'timestamp,frame,raw_pred,smooth_pred,'
+            + ','.join(f'prob_{n}' for n in LABEL_NAMES) + ','
+            + ','.join(feat_names) + ','
+            + ','.join(f'R_err_raw_{i}' for i in range(12)) + ','
+            + ','.join(f'L_err_raw_{i}' for i in range(12)) + '\n'
+        )
+        _feat_log.flush()
+        print(f"[CoordinationPredictor] Feature log: {_log_path}")
+
+        # ── Staleness detection state ──
+        # Track callback sequence counters: if seq didn't change since last frame,
+        # the data we read is stale (same buffer as previous frame).
+        _prev_seqs = {
+            'R_ctrl': 0, 'R_vr': 0, 'R_wrist': 0,
+            'L_ctrl': 0, 'L_vr': 0, 'L_wrist': 0,
+        }
+        # Also track value-level changes (even if callback fired, value might be identical)
+        _prev_vals = {
+            'R_ctrl_pos': None, 'R_vr_cmd': None, 'R_wrist_pos': None,
+            'L_ctrl_pos': None, 'L_vr_cmd': None, 'L_wrist_pos': None,
+        }
+        # Counters over a reporting window (reset every report_interval frames)
+        _stale_report_interval = 30  # report every 1 second at 30Hz
+        _stale_counts = {k: 0 for k in _prev_seqs}       # seq didn't change
+        _unchanged_counts = {k: 0 for k in _prev_vals}   # value didn't change
+        _stale_frame_count = 0
+
         while True:
             try:
                 loop_start = time.monotonic()
@@ -517,6 +559,18 @@ class CoordinationPredictor(Component):
                 if left_frame is not None:
                     left_frame = np.asanyarray(left_frame).reshape(4, 3)
                     self._node.set_wrist_pose('left', left_frame)
+
+                # Receive hand command intent from ZMQ (replaces ROS2 vr_sent_command)
+                right_hand_cmd = self._right_hand_cmd_sub.recv_keypoints(flags=1)
+                if right_hand_cmd is not None:
+                    self._node._right_vr_cmd = np.asanyarray(right_hand_cmd, dtype=np.float32)
+                    self._node._right_vr_seq += 1
+
+                left_hand_cmd = self._left_hand_cmd_sub.recv_keypoints(flags=1)
+                if left_hand_cmd is not None:
+                    self._node._left_vr_cmd = np.asanyarray(left_hand_cmd, dtype=np.float32)
+                    self._node._left_vr_seq += 1
+
                 ts2 = time.monotonic()
 
                 # Assemble state using same logic as get_full_controller_state()
@@ -544,6 +598,56 @@ class CoordinationPredictor(Component):
                     print("[CoordinationPredictor] All data ready, starting collection.")
                     waiting_printed = False
 
+                # ── Staleness detection ──
+                _stale_frame_count += 1
+                # 1) Sequence-level: did the callback fire since last frame?
+                cur_seqs = {
+                    'R_ctrl': self._node._right_ctrl_seq,
+                    'R_vr': self._node._right_vr_seq,
+                    'R_wrist': self._node._right_wrist_seq,
+                    'L_ctrl': self._node._left_ctrl_seq,
+                    'L_vr': self._node._left_vr_seq,
+                    'L_wrist': self._node._left_wrist_seq,
+                }
+                for k in cur_seqs:
+                    if cur_seqs[k] == _prev_seqs[k]:
+                        _stale_counts[k] += 1
+                _prev_seqs = dict(cur_seqs)
+
+                # 2) Value-level: even if callback fired, did the actual numbers change?
+                cur_vals = {
+                    'R_ctrl_pos': right_state['actual_position'],
+                    'R_vr_cmd': right_state['commanded_position'],
+                    'R_wrist_pos': right_state['wrist_position'],
+                    'L_ctrl_pos': left_state['actual_position'],
+                    'L_vr_cmd': left_state['commanded_position'],
+                    'L_wrist_pos': left_state['wrist_position'],
+                }
+                for k, v in cur_vals.items():
+                    if _prev_vals[k] is not None and np.array_equal(v, _prev_vals[k]):
+                        _unchanged_counts[k] += 1
+                _prev_vals = {k: v.copy() if isinstance(v, np.ndarray) else v
+                              for k, v in cur_vals.items()}
+
+                # 3) Report every _stale_report_interval frames
+                if _stale_frame_count >= _stale_report_interval:
+                    N = _stale_frame_count
+                    parts_seq = []
+                    for k in ['R_ctrl', 'R_vr', 'R_wrist', 'L_ctrl', 'L_vr', 'L_wrist']:
+                        updated = N - _stale_counts[k]
+                        parts_seq.append(f"{k}={updated}/{N}")
+                    parts_val = []
+                    for k in ['R_ctrl_pos', 'R_vr_cmd', 'R_wrist_pos',
+                              'L_ctrl_pos', 'L_vr_cmd', 'L_wrist_pos']:
+                        changed = N - _unchanged_counts[k]
+                        parts_val.append(f"{k}={changed}/{N}")
+                    print(f"[STALE-SEQ] callbacks fired:  {' | '.join(parts_seq)}")
+                    print(f"[STALE-VAL] values changed:   {' | '.join(parts_val)}")
+                    # Reset counters
+                    _stale_counts = {k: 0 for k in _stale_counts}
+                    _unchanged_counts = {k: 0 for k in _unchanged_counts}
+                    _stale_frame_count = 0
+
                 # Compute feature between consecutive 30Hz frames
                 ts3 = time.monotonic()
                 if prev_right is not None and prev_left is not None:
@@ -569,15 +673,9 @@ class CoordinationPredictor(Component):
 
                 frame_idx += 1
 
-                # --- TIMING DIAGNOSTICS ---
-                t0 = time.monotonic()
-
                 # Run inference
-                feature_window = np.array(feature_buffer)  # (50, 25)
-                t1 = time.monotonic()
-
+                feature_window = np.array(feature_buffer)  # (50, 7)
                 raw_pred, probs, infer_timing = self._predict(feature_window)
-                t2 = time.monotonic()
 
                 # Apply smoothing
                 if raw_pred == candidate_mode:
@@ -590,18 +688,33 @@ class CoordinationPredictor(Component):
                     current_mode = candidate_mode
 
                 self._node.publish_mode(current_mode)
-                t3 = time.monotonic()
+
+                # Log every 3 frames (~10Hz at 30fps)
+                if frame_idx % 3 == 0:
+                    # Current feature (last in buffer)
+                    feat = feature_buffer[-1]
+                    # Raw error values from state
+                    r_err = right_state['error_position']
+                    l_err = left_state['error_position']
+
+                    _feat_log.write(
+                        f"{time.time():.3f},{frame_idx},"
+                        f"{raw_pred},{current_mode},"
+                        + ','.join(f"{p:.4f}" for p in probs) + ','
+                        + ','.join(f"{v:.6f}" for v in feat) + ','
+                        + ','.join(f"{v:.6f}" for v in r_err) + ','
+                        + ','.join(f"{v:.6f}" for v in l_err) + '\n'
+                    )
 
                 # Print every 30 frames (1 sec)
                 if frame_idx % 30 == 0:
-                    dt_total = (t3 - loop_start) * 1000
-                    it = infer_timing
+                    prob_str = ' '.join(f"{LABEL_NAMES[i]}={probs[i]:.2f}" for i in range(len(probs)))
+                    feat = feature_buffer[-1]
                     print(f"[F{frame_idx:04d}] "
-                          f"scaler={it['scaler']:.1f} tensor={it['tensor']:.1f} "
-                          f"model={it['model']:.1f} post={it['post']:.1f} | "
-                          f"CPU={it['cpu_ms']:.1f}ms WALL={it['wall_ms']:.1f}ms | "
-                          f"TOTAL={dt_total:.1f}ms | "
-                          f"smooth={LABEL_NAMES[current_mode]}")
+                          f"raw={LABEL_NAMES[raw_pred]} smooth={LABEL_NAMES[current_mode]} | "
+                          f"{prob_str} | "
+                          f"R_err={feat[0]:.4f} L_err={feat[1]:.4f}")
+                    _feat_log.flush()
 
                 # Sleep-based timing (releases CPU and GIL)
                 elapsed = time.monotonic() - loop_start
@@ -613,6 +726,11 @@ class CoordinationPredictor(Component):
                 break
 
         print("[CoordinationPredictor] Shutting down.")
+        _feat_log.flush()
+        _feat_log.close()
+        print(f"[CoordinationPredictor] Feature log saved: {_log_path}")
         self._right_frame_sub.stop()
         self._left_frame_sub.stop()
+        self._right_hand_cmd_sub.stop()
+        self._left_hand_cmd_sub.stop()
         self._node.shutdown()

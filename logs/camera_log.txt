@@ -1,0 +1,23 @@
+Process Process-1:
+Traceback (most recent call last):
+  File "/home/kindred/miniconda3/envs/openteach/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+    self.run()
+  File "/home/kindred/miniconda3/envs/openteach/lib/python3.10/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/kindred/Desktop/repo/Open-Teach/openteach/components/initializers.py", line 47, in _start_component
+    component.stream()
+  File "/home/kindred/Desktop/repo/Open-Teach/openteach/components/sensors/realsense.py", line 113, in stream
+    color_image, depth_image, timestamp = self.get_rgb_depth_images()
+  File "/home/kindred/Desktop/repo/Open-Teach/openteach/components/sensors/realsense.py", line 89, in get_rgb_depth_images
+    frames = self.realsense.wait_for_frames()
+RuntimeError: Frame didn't arrive within 5000
+tcp://0.0.0.0:10005
+tcp://0.0.0.0:11005
+***************************************************************
+     Starting realsense component
+***************************************************************
+Started the Realsense pipeline for camera: 827312070419!
+Starting stream on 0.0.0.0:10005...
+
+Starting oculus stream on port: 10505
+

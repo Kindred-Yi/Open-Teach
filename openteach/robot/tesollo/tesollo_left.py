@@ -1,12 +1,17 @@
 import numpy as np
 from copy import deepcopy as copy
-from openteach.ros_links.tesollo_control2 import DexArmControl 
+from openteach.ros_links.tesollo_control2 import DexArmControl
 from openteach.constants import *
 from openteach.utils.files import get_yaml_data, get_path_in_package
+from openteach.utils.network import ZMQKeypointSubscriber
 from openteach.robot.robot import RobotWrapper
 
 class TesolloLeftHand(RobotWrapper):
-    def __init__(self, ip=None, port=None, dummy=False, **kwargs):
+    def __init__(self, ip=None, port=None, dummy=False,
+                 host='0.0.0.0',
+                 wrist_frame_port=None,
+                 hand_command_port=None,
+                 **kwargs):
         # Initialize Tesollo controller with Modbus TCP
         self._controller = DexArmControl(
             hand_type='left',
@@ -16,7 +21,22 @@ class TesolloLeftHand(RobotWrapper):
         self._joint_limit_config = get_yaml_data(get_path_in_package("robot/tesollo/configs/tesollo_link_info.yaml"))['links_info']
 
         self._data_frequency = 60
-        self._last_wrist_pose = None  # 用于缓存最新的 wrist pose
+        self._last_wrist_pose = None  # 缓存最新的 wrist pose
+        self._cached_vr_cmd = None   # 缓存最新的 VR command
+
+        # ZMQ subscribers for wrist frame and VR hand command (for data collection)
+        self._wrist_frame_sub = None
+        self._hand_cmd_sub = None
+
+        if wrist_frame_port is not None:
+            self._wrist_frame_sub = ZMQKeypointSubscriber(
+                host=host, port=wrist_frame_port, topic='transformed_hand_frame')
+            print(f"[TesolloLeftHand] ZMQ wrist frame subscriber on {host}:{wrist_frame_port}")
+
+        if hand_command_port is not None:
+            self._hand_cmd_sub = ZMQKeypointSubscriber(
+                host=host, port=hand_command_port, topic='hand_command')
+            print(f"[TesolloLeftHand] ZMQ hand command subscriber on {host}:{hand_command_port}")
 
     @property
     def name(self):
@@ -53,31 +73,33 @@ class TesolloLeftHand(RobotWrapper):
     def get_commanded_joint_position(self):
         return self._controller.get_commanded_hand_joint_position()
 
-    def get_vr_commanded_position(self):
-        """Get VR/OpenTeach sent command (bypasses hardware-level modifications)."""
-        return self._controller.get_vr_sent_command()
+    def _poll_zmq(self):
+        """Poll ZMQ subscribers non-blocking and cache latest values."""
+        if self._wrist_frame_sub is not None:
+            frame = self._wrist_frame_sub.recv_keypoints(flags=1)
+            if frame is not None:
+                self._last_wrist_pose = np.asanyarray(frame).reshape(4, 3)
+
+        if self._hand_cmd_sub is not None:
+            cmd = self._hand_cmd_sub.recv_keypoints(flags=1)
+            if cmd is not None:
+                self._cached_vr_cmd = np.asanyarray(cmd, dtype=np.float32)
 
     def get_full_controller_state(self):
-        """Get controller state with VR command instead of hardware-modified command."""
+        """Get controller state with VR command and wrist pose from ZMQ."""
         hw_state = self._controller.get_full_controller_state()
         if hw_state is None:
             return None
 
-        # Replace hardware commanded with VR commanded
-        vr_cmd = self._controller.get_vr_sent_command()
-        if vr_cmd is not None:
-            hw_state['commanded_position'] = vr_cmd
-            # Recalculate error based on VR command
-            hw_state['error_position'] = vr_cmd - hw_state['actual_position']
+        # Poll ZMQ for latest wrist and VR command data
+        self._poll_zmq()
 
-        # Add wrist pose from VR
-        wrist_pose = self._controller.get_wrist_pose()
-        #if wrist_pose is not None:
-        #    hw_state['wrist_position'] = wrist_pose[0]  # origin_coord
-        #    hw_state['wrist_orientation'] = wrist_pose[1:]  # [cross, normal, direction]
-        
-        if wrist_pose is not None:
-            self._last_wrist_pose = wrist_pose    # 缓存最新有效值
+        # Replace hardware commanded with VR commanded
+        if self._cached_vr_cmd is not None:
+            hw_state['commanded_position'] = self._cached_vr_cmd
+            hw_state['error_position'] = self._cached_vr_cmd - hw_state['actual_position']
+
+        # Add wrist pose
         if self._last_wrist_pose is not None:
             hw_state['wrist_position'] = self._last_wrist_pose[0]
             hw_state['wrist_orientation'] = self._last_wrist_pose[1:]
@@ -90,10 +112,6 @@ class TesolloLeftHand(RobotWrapper):
     def get_coordination_mode(self):
         """Get current coordination mode from CoordinationPredictor."""
         return self._controller.get_coordination_mode()
-
-    def set_wrist_pose(self, hand_frame):
-        """Set wrist pose (hand frame) to be published via ROS2."""
-        self._controller.set_wrist_pose(hand_frame)
 
     # Getting random position initializations for the fingers
     def _get_finger_limits(self, finger_type):

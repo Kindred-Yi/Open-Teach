@@ -16,12 +16,12 @@ CONFIG = {
     'demo_path': 'demonstration_63',           # 目标文件夹
     'video_file': 'cam_0_rgb_video.avi',
     'features_file': 'lstm_danny_features.h5', # 确保这是包含2维特征的文件
-    'model_path': '213grasp_model.pth',    # 你刚刚训练好的二元模型
-    'scaler_path': '213scaler_merged.pkl',        # 对应的标准化器
-    'output_video': 'demo63_213results.mp4',
+    'model_path': '219grasp_model.pth',    # 你刚刚训练好的二元模型
+    'scaler_path': '219scaler_merged.pkl',        # 对应的标准化器
+    'output_video': 'demo63_219results.mp4',
     'window_size': 50,
-    'input_dim': 25,                            # 关键：改为2维 (L/R error)
-    'hidden_dim': 128,                          # 关键：改为你二元训练时的64
+    'input_dim': 5,                            # 关键：改为2维 (L/R error)
+    'hidden_dim': 64,                          # 关键：改为你二元训练时的64
     'layer_dim': 1,
     'num_classes': 7,                          # 
     'device': 'cuda' if torch.cuda.is_available() else 'cpu'

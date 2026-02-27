@@ -14,7 +14,21 @@ from scipy.spatial.transform import Rotation as R
 from openteach.ros_links.coordination_listener import CoordinationListener
 
 # Coordination mode labels
+COORD_TIGHT_ASYM_L = 4   # Left dominant → right is non-dominant
+COORD_TIGHT_ASYM_R = 5   # Right dominant → left is non-dominant
 COORD_TIGHTLY_SYMMETRIC = 6
+
+# Non-dominant arm damping: 0.3 means arm moves at 30% of VR command
+ASYM_DAMPING = 0.3
+
+# Static transformation from Right arm base frame to Left arm base frame.
+# Two Franka arms face-to-face, 1.1168m apart, same height.
+# Right arm: X forward, Left arm: X forward (toward right arm) → 180° rotation around Z.
+# This matrix is its own inverse (T_R2L == T_L2R).
+T_R2L = np.array([[-1.,  0., 0., 1.1168],
+                  [ 0., -1., 0., 0.    ],
+                  [ 0.,  0., 1., 0.    ],
+                  [ 0.,  0., 0., 1.    ]])
 
 
 class Filter:
@@ -219,11 +233,15 @@ class FrankaLeftArmOperator(Operator):
     def _compute_follower_pose(self, right_arm_pose):
         """Compute left arm target pose to maintain the recorded offset from right arm.
 
-        offset = T_right^{-1} * T_left  (recorded at symmetric mode entry)
-        T_left_new = T_right_new * offset
+        1. Convert right arm pose from R frame to L frame using T_R2L.
+        2. Apply the offset (recorded in L frame) to get left arm target.
+
+        offset = T_right_in_L^{-1} * T_left  (recorded at symmetric mode entry)
+        T_left_new = (T_R2L * T_right_new) * offset
         """
-        T_right = self._cart2homo(right_arm_pose)
-        T_left = T_right @ self._symmetric_offset
+        T_right_in_R = self._cart2homo(right_arm_pose)
+        T_right_in_L = T_R2L @ T_right_in_R
+        T_left = T_right_in_L @ self._symmetric_offset
         return self._homo2cart(T_left)
 
     # Apply the retargeted angles
@@ -278,19 +296,32 @@ class FrankaLeftArmOperator(Operator):
         if self.use_filter:
             final_pose = self.comp_filter(final_pose)
 
-        # Check coordination mode for Tightly Symmetric handling
+        # Check coordination mode for Tightly Asymmetric / Symmetric handling
         coord_mode = self._coord_listener.get_coordination_mode()
 
-        if coord_mode == COORD_TIGHTLY_SYMMETRIC:
+        if coord_mode == COORD_TIGHT_ASYM_R:
+            # Right is dominant → left (this arm) is non-dominant → dampen
+            current_cart = self._homo2cart(self.robot.get_pose()['position'])
+            d = ASYM_DAMPING
+            # Translation: move only d fraction toward target
+            final_pose[:3] = current_cart[:3] + d * (final_pose[:3] - current_cart[:3])
+            # Rotation: Slerp from current toward target
+            ori_interp = Slerp([0, 1], Rotation.from_quat(
+                np.stack([current_cart[3:7], final_pose[3:7]])))
+            final_pose[3:7] = ori_interp([d])[0].as_quat()
+            # Clear symmetric offset if we were previously in symmetric mode
+            self._symmetric_offset = None
+
+        elif coord_mode == COORD_TIGHTLY_SYMMETRIC:
             right_arm_pose = self._coord_listener.get_other_arm_pose()
 
-            if self._prev_coord_mode != COORD_TIGHTLY_SYMMETRIC:
-                # Just entered symmetric mode: record offset
+            # Record offset: retry every frame until successful (Bug fix: not just transition frame)
+            if self._symmetric_offset is None:
                 if right_arm_pose is not None:
-                    T_right = self._cart2homo(right_arm_pose)
-                    T_left = self._cart2homo(final_pose)
-                    # offset = T_right^{-1} * T_left
-                    self._symmetric_offset = np.linalg.inv(T_right) @ T_left
+                    T_right_in_R = self._cart2homo(right_arm_pose)
+                    T_right_in_L = T_R2L @ T_right_in_R
+                    T_left_in_L = self._cart2homo(final_pose)
+                    self._symmetric_offset = np.linalg.inv(T_right_in_L) @ T_left_in_L
                     print("[FrankaLeft] Entering Tightly Symmetric mode - offset recorded")
 
             if self._symmetric_offset is not None and right_arm_pose is not None:
@@ -300,12 +331,20 @@ class FrankaLeftArmOperator(Operator):
             # Exiting symmetric mode
             if self._prev_coord_mode == COORD_TIGHTLY_SYMMETRIC and self._symmetric_offset is not None:
                 print("[FrankaLeft] Exiting Tightly Symmetric mode")
-                # Reset teleop so the arm resumes from current position smoothly
+                # Bug fix: use current robot pose as final_pose to prevent jump.
+                # The stale VR-computed final_pose (from line 289) was based on
+                # robot_init_H set BEFORE entering symmetric mode — could be far
+                # from where the robot actually is now.
+                final_pose = self._homo2cart(self.robot.get_pose()['position'])
+                # Reset teleop reference to current state
                 self.robot_init_H = self.robot.get_pose()['position']
-                first_hand_frame = self._get_hand_frame()
-                if first_hand_frame is not None:
-                    self.hand_init_H = self._turn_frame_to_homo_mat(first_hand_frame)
+                moving_hand_frame = self._get_hand_frame()
+                if moving_hand_frame is not None:
+                    self.hand_init_H = self._turn_frame_to_homo_mat(moving_hand_frame)
                     self.hand_init_t = copy(self.hand_init_H[:3, 3])
+                else:
+                    # Hand frame unavailable: force a full reset on next frame
+                    self.is_first_frame = True
             self._symmetric_offset = None
 
         self._prev_coord_mode = coord_mode

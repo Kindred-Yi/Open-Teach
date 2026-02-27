@@ -76,12 +76,6 @@ class DexArmControl(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
         )
-        # VR topics can be high-rate; drop old samples instead of back-pressuring.
-        vr_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=1,
-        )
 
         # Subscribe to aggregated joint states from ros2_control
         self.tesollo_joint_state: Optional[JointState] = None
@@ -103,31 +97,6 @@ class DexArmControl(Node):
 
         # Publisher to JointTrajectoryController command topic
         self.traj_pub = self.create_publisher(JointTrajectory, JTC_CMD_TOPIC, cmd_qos)
-
-        # Publisher for VR sent commands (for cross-process communication)
-        VR_CMD_TOPIC = f'/{hand_type.lower()}/vr_sent_command'
-        self.vr_cmd_pub = self.create_publisher(JointState, VR_CMD_TOPIC, vr_qos)
-
-        # Subscriber for VR sent commands (for recorder process)
-        self._vr_received_command: Optional[JointState] = None
-        self.create_subscription(
-            JointState,
-            VR_CMD_TOPIC,
-            self._callback_vr_command,
-            qos_profile=vr_qos,
-        )
-
-        # Publisher and subscriber for wrist pose (hand frame from VR)
-        # Frame format: [origin_coord(3), cross_product(3), palm_normal(3), palm_direction(3)] = 12 floats
-        WRIST_POSE_TOPIC = f'/{hand_type.lower()}/vr_wrist_pose'
-        self.wrist_pose_pub = self.create_publisher(Float32MultiArray, WRIST_POSE_TOPIC, vr_qos)
-        self._wrist_pose: Optional[np.ndarray] = None
-        self.create_subscription(
-            Float32MultiArray,
-            WRIST_POSE_TOPIC,
-            self._callback_wrist_pose,
-            qos_profile=vr_qos,
-        )
 
         # Subscriber for coordination mode (from CoordinationPredictor)
         # Use BEST_EFFORT to match the predictor's publisher QoS
@@ -180,14 +149,6 @@ class DexArmControl(Node):
 
     def _callback_coordination_mode(self, msg: Int32):
         self._coordination_mode = msg.data
-
-    def _callback_vr_command(self, msg: JointState):
-        """Callback for receiving VR commands from operator process."""
-        self._vr_received_command = msg
-
-    def _callback_wrist_pose(self, msg: Float32MultiArray):
-        """Callback for receiving wrist pose from operator process."""
-        self._wrist_pose = np.array(msg.data, dtype=np.float32).reshape(4, 3)
 
     # ----------------- State getters -----------------
     def get_hand_state(self):
@@ -247,36 +208,6 @@ class DexArmControl(Node):
         if self.controller_state is None:
             return None
         return np.array(self.controller_state.reference.positions, dtype=np.float32)
-
-    def get_vr_sent_command(self):
-        """Get the actual command sent by VR/OpenTeach (not affected by hardware).
-
-        This works across processes via ROS2 topic.
-        - In operator process: receives commands published by move_hand()
-        - In recorder process: receives same commands from operator process
-        """
-        if self._vr_received_command is None:
-            return None
-        return np.array(self._vr_received_command.position, dtype=np.float32)
-
-    def set_wrist_pose(self, hand_frame: np.ndarray):
-        """Publish wrist pose (hand frame) to ROS2 topic.
-
-        Args:
-            hand_frame: 4x3 array [origin_coord, cross_product, palm_normal, palm_direction]
-        """
-        msg = Float32MultiArray()
-        msg.data = hand_frame.flatten().astype(np.float32).tolist()
-        self.wrist_pose_pub.publish(msg)
-
-    def get_wrist_pose(self):
-        """Get wrist pose (hand frame) from ROS2 topic.
-
-        Returns:
-            4x3 numpy array [origin_coord, cross_product, palm_normal, palm_direction]
-            or None if not available
-        """
-        return self._wrist_pose
 
     def get_coordination_mode(self):
         """Get current coordination mode from CoordinationPredictor.
@@ -361,13 +292,6 @@ class DexArmControl(Node):
 
         msg.points = [pt]
         self.traj_pub.publish(msg)
-
-        # Publish VR command for cross-process recording
-        vr_cmd_msg = JointState()
-        vr_cmd_msg.header.stamp = self.get_clock().now().to_msg()
-        vr_cmd_msg.name = self.joint_names
-        vr_cmd_msg.position = q
-        self.vr_cmd_pub.publish(vr_cmd_msg)
 
     def home_hand(self):
         self.move_hand(TESOLLO_HOME_VALUES)

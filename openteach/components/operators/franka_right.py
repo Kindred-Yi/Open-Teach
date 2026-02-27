@@ -14,7 +14,12 @@ from scipy.spatial.transform import Rotation as R
 from openteach.ros_links.coordination_listener import CoordinationListener
 
 # Coordination mode labels
+COORD_TIGHT_ASYM_L = 4   # Left dominant → right is non-dominant
+COORD_TIGHT_ASYM_R = 5   # Right dominant → left is non-dominant
 COORD_TIGHTLY_SYMMETRIC = 6
+
+# Non-dominant arm damping: 0.3 means arm moves at 30% of VR command
+ASYM_DAMPING = 0.3
 
 
 class Filter:
@@ -257,6 +262,19 @@ class FrankaRightArmOperator(Operator):
         # Use a Filter
         if self.use_filter:
             final_pose = self.comp_filter(final_pose)
+
+        # Dampen non-dominant arm in TightlyAsymmetric mode
+        coord_mode = self._coord_listener.get_coordination_mode()
+        if coord_mode == COORD_TIGHT_ASYM_L:
+            # Left is dominant → right (this arm) is non-dominant → dampen
+            current_cart = self._homo2cart(self.robot.get_pose()['position'])
+            d = ASYM_DAMPING
+            # Translation: move only d fraction toward target
+            final_pose[:3] = current_cart[:3] + d * (final_pose[:3] - current_cart[:3])
+            # Rotation: Slerp from current toward target
+            ori_interp = Slerp([0, 1], Rotation.from_quat(
+                np.stack([current_cart[3:7], final_pose[3:7]])))
+            final_pose[3:7] = ori_interp([d])[0].as_quat()
 
         # Publish own pose for cross-arm coordination (always, so left arm can read it)
         self._coord_listener.publish_arm_pose(final_pose)

@@ -45,10 +45,11 @@ operators:
     arm_resolution_port: ${resolution_button_publish_port} 
     use_filter: True
 
-  - 
+  -
     _target_: openteach.components.operators.tesollo_right.TesolloRightHandOperator
     host: ${host_address}
     transformed_keypoints_port: ${transformed_position_keypoint_port}
+    hand_command_port: ${hand_command_port_right}
     finger_configs:
       freeze_index: false
       freeze_middle: false
@@ -65,10 +66,11 @@ operators:
     arm_resolution_port: ${resolution_button_publish_port} 
     use_filter: True
 
-  - 
+  -
     _target_: openteach.components.operators.tesollo_left.TesolloLeftHandOperator
     host: ${host_address}
     transformed_keypoints_port: ${transformed_position_left_keypoint_port}
+    hand_command_port: ${hand_command_port_left}
     finger_configs:
       freeze_index: false
       freeze_middle: false
@@ -87,6 +89,9 @@ controllers:
 
   -
     _target_: openteach.robot.tesollo.tesollo_right.TesolloRightHand
+    host: ${host_address}
+    wrist_frame_port: ${transformed_position_keypoint_port}
+    hand_command_port: ${hand_command_port_right}
 
   -
     _target_: openteach.robot.franka_left.FrankaLeft
@@ -94,6 +99,9 @@ controllers:
 
   -
     _target_: openteach.robot.tesollo.tesollo_left.TesolloLeftHand
+    host: ${host_address}
+    wrist_frame_port: ${transformed_position_left_keypoint_port}
+    hand_command_port: ${hand_command_port_left}
 
 # Information to be recorded for the robot 
 recorded_data:

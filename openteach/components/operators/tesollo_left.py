@@ -21,7 +21,7 @@ COORD_TIGHTLY_SYMMETRIC = 6
 
 
 class TesolloLeftHandOperator(Operator):
-    def __init__(self, host, transformed_keypoints_port, finger_configs):
+    def __init__(self, host, transformed_keypoints_port, finger_configs, hand_command_port=None):
         self.notify_component_start('tesollo left hand operator')
         self._host, self._port = host, transformed_keypoints_port
         # Subscriber for the transformed hand keypoints
@@ -63,6 +63,12 @@ class TesolloLeftHandOperator(Operator):
         self._locked_angles = None  # Cached angles when gripper is locked
         self._slowdown_alpha = 0.15  # Interpolation factor for speed reduction (smaller = slower)
 
+        # ZMQ publisher for hand command intent (used by coordination predictor)
+        self._hand_cmd_pub = None
+        if hand_command_port is not None:
+            from openteach.utils.network import ZMQKeypointPublisher
+            self._hand_cmd_pub = ZMQKeypointPublisher(host, hand_command_port)
+            print(f"[TesolloLeft] Hand command ZMQ publisher on port {hand_command_port}")
 
     @property
     def timer(self):
@@ -152,20 +158,10 @@ class TesolloLeftHandOperator(Operator):
 
         # Get coordination mode from CoordinationPredictor
         coord_mode = self.robot.get_coordination_mode()
+        gripper_locked = self._should_lock_gripper(coord_mode)
 
-        # Check if gripper should be locked by coordination prediction
-        if self._should_lock_gripper(coord_mode):
-            if self._locked_angles is not None:
-                # Keep sending locked angles
-                self.robot.move(self._locked_angles)
-                # Still need to consume wrist pose to avoid stale data
-                hand_frame = self.transformed_arm_keypoint_subscriber.recv_keypoints()
-                if hand_frame is not None:
-                    hand_frame = np.asanyarray(hand_frame).reshape(4, 3)
-                    self.robot.set_wrist_pose(hand_frame)
-                return
-            # else: first frame of lock, fall through to compute angles and cache them
-
+        # Always compute desired angles from VR hand data (even when locked),
+        # so the predictor can observe the operator's intent via vr_sent_command.
         desired_joint_angles = copy(self.robot.get_joint_position())
         index_vec = hand_keypoints['index'][2] - hand_keypoints['index'][1]
         middle_vec = hand_keypoints['middle'][2] - hand_keypoints['middle'][1]
@@ -221,13 +217,11 @@ class TesolloLeftHandOperator(Operator):
             print("No thumb")
             pass
 
-        # Apply coordination-based modifications
-        if self._should_lock_gripper(coord_mode):
-            # First frame of lock: cache the computed angles
-            self._locked_angles = copy(desired_joint_angles)
-        else:
-            # Not locked: clear the cache
-            self._locked_angles = None
+        # Publish VR intent via ZMQ (always, so predictor sees operator's hand state)
+        if self._hand_cmd_pub is not None:
+            self._hand_cmd_pub.pub_keypoints(desired_joint_angles, 'hand_command')
+
+        if not gripper_locked:
 
             # Slow down if non-dominant in tightly asymmetric
             if self._should_slow_down(coord_mode):
@@ -238,11 +232,6 @@ class TesolloLeftHandOperator(Operator):
                         current_angles * (1 - alpha) + desired_joint_angles * alpha
                     )
 
-        # Move the robot
-        self.robot.move(desired_joint_angles)
+            # Move the robot
+            self.robot.move(desired_joint_angles)
 
-        # Publish wrist pose (hand frame) for recording
-        hand_frame = self.transformed_arm_keypoint_subscriber.recv_keypoints(flags=1)  # non-blocking
-        if hand_frame is not None:
-            hand_frame = np.asanyarray(hand_frame).reshape(4, 3)
-            self.robot.set_wrist_pose(hand_frame)

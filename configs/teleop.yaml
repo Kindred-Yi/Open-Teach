@@ -12,8 +12,8 @@ run_xela:  false
 
 # Coordination prediction (LSTM-based bimanual coordination mode classifier)
 coordination_prediction: false
-coordination_model_path: extracted_data/28_140grasp_model.pth
-coordination_scaler_path: extracted_data/27scaler_merged.pkl
+coordination_model_path: extracted_data/219grasp_model.pth
+coordination_scaler_path: extracted_data/219scaler_merged.pkl
 coordination_window_size: 50
 coordination_smoothing_count: 2
 coordination_data_frequency: 60

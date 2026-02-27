@@ -120,18 +120,20 @@ class TeleOperator(ProcessInstantiator):
     #Function to start the coordination predictor
     def _init_coordination_predictor(self, configs):
         model_path = getattr(configs, 'coordination_model_path',
-                             'extracted_data/213grasp_model.pth')
+                             'extracted_data/219grasp_model.pth')
         scaler_path = getattr(configs, 'coordination_scaler_path',
-                              'extracted_data/213scaler_merged.pkl')
+                              'extracted_data/219scaler_merged.pkl')
         window_size = getattr(configs, 'coordination_window_size', 50)
         smoothing_count = getattr(configs, 'coordination_smoothing_count', 2)
         data_frequency = getattr(configs, 'coordination_data_frequency', 60)
         feature_frequency = getattr(configs, 'coordination_feature_frequency', 30)
 
-        # ZMQ ports for wrist pose (direct from transform, bypass ROS2)
+        # ZMQ ports
         host = configs.host_address
         right_keypoints_port = configs.transformed_position_keypoint_port
         left_keypoints_port = configs.transformed_position_left_keypoint_port
+        right_hand_cmd_port = configs.hand_command_port_right
+        left_hand_cmd_port = configs.hand_command_port_left
 
         def start_predictor():
             from .operators.coordination_predictor import CoordinationPredictor
@@ -141,6 +143,8 @@ class TeleOperator(ProcessInstantiator):
                 host=host,
                 right_keypoints_port=right_keypoints_port,
                 left_keypoints_port=left_keypoints_port,
+                right_hand_command_port=right_hand_cmd_port,
+                left_hand_command_port=left_hand_cmd_port,
                 window_size=window_size,
                 smoothing_count=smoothing_count,
                 data_frequency=data_frequency,
